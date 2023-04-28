@@ -56,7 +56,7 @@ namespace Iotm {
   class IOTM_EXPORT TextMesh
   {
   public:
-    explicit TextMesh(const std::string &parameters, IOSS_MAYBE_UNUSED int proc_count = 1,
+    explicit TextMesh(const std::string &parameters, int proc_count = 1,
                       int my_proc = 0);
     explicit TextMesh(int proc_count = 1, int my_proc = 0);
     TextMesh();

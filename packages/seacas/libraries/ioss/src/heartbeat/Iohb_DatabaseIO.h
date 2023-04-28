@@ -6,22 +6,17 @@
 
 #pragma once
 
-#include "iohb_export.h"
-
-#include <Iohb_Layout.h>
+#include "Iohb_Layout.h"
+#include "Ioss_State.h" // for State
 #include <Ioss_CodeTypes.h>
-#include <Ioss_DBUsage.h>
-#include <Ioss_DatabaseIO.h>
-#include <Ioss_IOFactory.h>
-#include <Ioss_State.h>
-#include <cstddef>
-#include <cstdint>
-#include <iostream>
-#include <string>
-
-namespace Ioss {
-  class GroupingEntity;
-  class EntityBlock;
+#include <Ioss_DBUsage.h>    // for DatabaseUsage
+#include <Ioss_DatabaseIO.h> // for DatabaseIO
+#include <Ioss_IOFactory.h>  // for IOFactory
+#include <cstddef>           // for size_t
+#include <cstdint>           // for int64_t
+#include <iostream>          // for ostream
+#include <string>            // for string
+namespace Iohb {
   class CommSet;
   class EdgeBlock;
   class EdgeSet;
@@ -37,6 +32,11 @@ namespace Ioss {
   class SideBlock;
   class SideSet;
   class StructuredBlock;
+} // namespace Iohb
+
+namespace Ioss {
+  class GroupingEntity;
+  class EntityBlock;
 } // namespace Ioss
 
 /** \brief A namespace for the heartbeat database format.
@@ -46,7 +46,7 @@ namespace Iohb {
 
   enum class Format { DEFAULT = 0, SPYHIS = 1, TEXT, TS_TEXT, CSV, TS_CSV };
 
-  class IOHB_EXPORT IOFactory : public Ioss::IOFactory
+  class IOFactory : public Ioss::IOFactory
   {
   public:
     static const IOFactory *factory();
@@ -58,7 +58,7 @@ namespace Iohb {
                               const Ioss::PropertyManager &props) const override;
   };
 
-  class IOHB_EXPORT DatabaseIO : public Ioss::DatabaseIO
+  class DatabaseIO : public Ioss::DatabaseIO
   {
   public:
     DatabaseIO(Ioss::Region *region, const std::string &filename, Ioss::DatabaseUsage db_usage,
