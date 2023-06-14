@@ -46,7 +46,7 @@ namespace Iocatalyst {
     void addBlockMesh(const BlockMesh &blockMesh);
     void writeIOSSFile(IOSSparams &iop);
     void writeCatalystIOSSFile(IOSSparams &iop);
-    int getNumLocalPointsInMeshSet();
+    int  getNumLocalPointsInMeshSet();
 
   private:
     std::vector<BlockMesh> bms;
@@ -80,6 +80,7 @@ namespace Iocatalyst {
     inline static const std::string EXODUS_DATABASE_TYPE = "exodus";
     inline static const std::string IOSS_CELL_FIELD      = "cell";
     inline static const std::string IOSS_POINT_FIELD     = "point";
+    inline static const std::string IOSS_GLOBAL_FIELD    = "global";
     inline static const std::string IOSS_SCALAR_STORAGE  = "scalar";
   };
 
