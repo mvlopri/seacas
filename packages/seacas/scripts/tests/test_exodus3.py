@@ -217,7 +217,7 @@ class TestExodus(unittest.TestCase):
         with exo.exodus(new_path, mode="w+") as exofile:
             exofile.put_qa_records(qa_recs + new)
             with exo.exodus(self.temp_exo_path) as orig:
-                orig.copy_file(exofile.fileId, include_transient=True)
+                orig.copy_file(exofile.file_ids[0], include_transient=True)
                 self.assertIn(new[0], exofile.get_qa_records())
 
     def test_put_assembly(self):
