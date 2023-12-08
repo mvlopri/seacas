@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include "Ioss_CodeTypes.h"
+#include <cstddef> // for size_t
+#include <stdint.h>
+#include <string> // for string
+#include <vector> // for vector
+
 #include "ioss_export.h"
 
-#include <Ioss_CodeTypes.h>
-#include <cstddef> // for size_t
-#include <string>  // for string
-#include <vector>  // for vector
 namespace Ioss {
   class GroupingEntity;
   class Transform;
@@ -96,6 +98,8 @@ namespace Ioss {
 
     Field(const Ioss::Field &from)      = default;
     Field &operator=(const Field &from) = default;
+    Field(Ioss::Field &&from)           = default;
+    Field &operator=(Field &&from)      = default;
     ~Field()                            = default;
 
     // Compare two fields (used for STL container)
@@ -150,7 +154,7 @@ namespace Ioss {
     size_t raw_count() const { return rawCount_; }           // Number of items in field
     size_t transformed_count() const { return transCount_; } // Number of items in field
 
-    size_t get_size() const; // data size (in bytes) required to hold entire field
+    size_t get_size() const;       // data size (in bytes) required to hold entire field
     size_t get_basic_size() const; // data size (in bytes) of the basic type
 
     /** \brief Get the role (MESH, ATTRIBUTE, TRANSIENT, REDUCTION, etc.) of the data in the field.

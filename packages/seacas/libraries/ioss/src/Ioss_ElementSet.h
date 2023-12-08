@@ -8,9 +8,9 @@
 
 #include "ioss_export.h"
 
+#include "Ioss_EntitySet.h"  // for EntitySet
 #include "Ioss_EntityType.h" // for EntityType, etc
 #include "Ioss_Property.h"   // for Property
-#include <Ioss_EntitySet.h>  // for EntitySet
 #include <cstddef>           // for size_t
 #include <cstdint>           // for int64_t
 #include <string>            // for string
@@ -38,7 +38,7 @@ namespace Ioss {
     std::string contains_string() const override { return "Element"; }
     EntityType  type() const override { return ELEMENTSET; }
 
-    // Handle implicit properties -- These are calcuated from data stored
+    // Handle implicit properties -- These are calculated from data stored
     // in the grouping entity instead of having an explicit value assigned.
     // An example would be 'element_block_count' for a region.
     Property get_implicit_property(const std::string &my_name) const override;

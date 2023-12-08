@@ -10,10 +10,10 @@
 #include <exodusII.h>
 #if defined PARALLEL_AWARE_EXODUS
 
-#include "ioexnl_export.h"
-
-#include <Ioss_CodeTypes.h>
+#include "Ioss_CodeTypes.h"
 #include <vector>
+
+#include "ioexnl_export.h"
 #if !defined(NO_PARMETIS_SUPPORT)
 #include <parmetis.h>
 #endif
@@ -22,9 +22,9 @@
 #if !defined(NO_ZOLTAN_SUPPORT)
 #include <zoltan_cpp.h>
 #endif
-#include <Ioss_Decomposition.h>
-#include <Ioss_Map.h>
-#include <Ioss_PropertyManager.h>
+#include "Ioss_Decomposition.h"
+#include "Ioss_Map.h"
+#include "Ioss_PropertyManager.h"
 
 namespace Ioss {
   class Field;
@@ -38,10 +38,10 @@ namespace Ioexnl {
     DecompositionDataBase(const DecompositionDataBase &)            = delete;
     DecompositionDataBase &operator=(const DecompositionDataBase &) = delete;
 
-    virtual ~DecompositionDataBase()            = default;
-    virtual int    int_size() const             = 0;
-    virtual size_t ioss_node_count() const      = 0;
-    virtual size_t ioss_elem_count() const      = 0;
+    virtual ~DecompositionDataBase()       = default;
+    virtual int    int_size() const        = 0;
+    virtual size_t ioss_node_count() const = 0;
+    virtual size_t ioss_elem_count() const = 0;
 
     virtual int    spatial_dimension() const = 0;
     virtual size_t global_node_count() const = 0;

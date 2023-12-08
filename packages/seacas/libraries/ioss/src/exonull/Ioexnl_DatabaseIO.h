@@ -7,24 +7,23 @@
 // -*- Mode: c++ -*-
 #pragma once
 
-#include "ioexnl_export.h"
-
-#include <Ioss_DBUsage.h>
-#include <Ioss_Field.h>
-#include <Ioss_Map.h>
-#include <Ioss_Utils.h>
-#include <exonull/Ioexnl_BaseDatabaseIO.h>
-
-#include <exodusII.h>
-
+#include "Ioss_DBUsage.h"
+#include "Ioss_Field.h"
+#include "Ioss_Map.h"
+#include "Ioss_Utils.h"
+#include "exonull/Ioexnl_BaseDatabaseIO.h"
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <exodusII.h>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include "Ioss_CodeTypes.h"
+#include "ioexnl_export.h"
 
 namespace Ioss {
   class GroupingEntity;
@@ -44,6 +43,11 @@ namespace Ioss {
   class StructuredBlock;
   class CommSet;
   class ElementTopology;
+  class Assembly;
+  class Blob;
+  class Field;
+  class Map;
+  class PropertyManager;
 } // namespace Ioss
 
 namespace Ioexnl {
@@ -67,7 +71,7 @@ namespace Ioexnl {
     int get_file_pointer() const override; // Open file and set exodusFilePtr.
 
   private:
-    void get_step_times__() override;
+    void get_step_times_nl() override;
 
     bool handle_output_file(bool write_message, std::string *error_msg, int *bad_count,
                             bool overwrite, bool abort_if_error) const override;
@@ -114,14 +118,13 @@ namespace Ioexnl {
     int64_t get_Xset_field_internal(const Ioss::EntitySet *ns, const Ioss::Field &field, void *data,
                                     size_t data_size) const;
 
-  private:
     int64_t read_nodal_coordinates();
     void    read_elements(const Ioss::ElementBlock &block);
 
     void compute_node_status() const;
 
     // Metadata-related functions.
-    void read_meta_data__() override;
+    void read_meta_data_nl() override;
     void read_communication_metadata();
 
     int64_t read_transient_field(const Ioexnl::VariableNameMap &variables, const Ioss::Field &field,

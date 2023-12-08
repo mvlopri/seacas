@@ -24,10 +24,10 @@ namespace Ioss {
   using IJK_t       = std::array<int, 3>;
 } // namespace Ioss
 
-inline std::string IOSS_SCALAR() { return std::string("scalar"); }
-inline std::string IOSS_VECTOR_2D() { return std::string("vector_2d"); }
-inline std::string IOSS_VECTOR_3D() { return std::string("vector_3d"); }
-inline std::string IOSS_SYM_TENSOR() { return std::string("sym_tensor_33"); }
+inline std::string IOSS_SCALAR() { return {"scalar"}; }
+inline std::string IOSS_VECTOR_2D() { return {"vector_2d"}; }
+inline std::string IOSS_VECTOR_3D() { return {"vector_3d"}; }
+inline std::string IOSS_SYM_TENSOR() { return {"sym_tensor_33"}; }
 
 #if defined(BUILT_IN_SIERRA)
 #define SEACAS_HAVE_MPI
@@ -38,7 +38,7 @@ inline std::string IOSS_SYM_TENSOR() { return std::string("sym_tensor_33"); }
 /* #undef SEACAS_HAVE_FAODEL */
 #define SEACAS_HAVE_PAMGEN
 #else
-#include <SEACASIoss_config.h>
+#include "SEACASIoss_config.h"
 #endif
 
 #if defined(IOSS_THREADSAFE)
@@ -55,6 +55,7 @@ inline std::string IOSS_SYM_TENSOR() { return std::string("sym_tensor_33"); }
 #include <mpi.h>
 using Ioss_MPI_Comm = MPI_Comm;
 #define IOSS_PAR_UNUSED(x)
+#define ADIOS2_USE_MPI 1
 #else
 using Ioss_MPI_Comm = int;
 #if (__cplusplus >= 201703L)
@@ -83,7 +84,7 @@ using Complex = std::complex<float>;
 using Kokkos_Complex = Kokkos::complex<float>;
 #endif
 #else
-using Complex        = std::complex<double>;
+using Complex = std::complex<double>;
 #ifdef SEACAS_HAVE_KOKKOS
 using Kokkos_Complex = Kokkos::complex<double>;
 #endif
@@ -94,7 +95,7 @@ using Kokkos_Complex = Kokkos::complex<double>;
 #else
 
 #if defined IOSS_TRACE
-#include <Ioss_Tracer.h>
+#include "Ioss_Tracer.h"
 #define IOSS_FUNC_ENTER(m) Ioss::Tracer m(__func__)
 #else
 #define IOSS_FUNC_ENTER(m)

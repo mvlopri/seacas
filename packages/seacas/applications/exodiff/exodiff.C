@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fmt/chrono.h>
 #include <fmt/ostream.h>
 #include <fstream>
 #include <iostream>
@@ -55,11 +56,16 @@ struct TimeInterp
 
 std::string Date()
 {
+  time_t calendar_time = time(nullptr);
+#if defined __NVCC__
   char       tbuf[32];
-  time_t     calendar_time = time(nullptr);
-  struct tm *local_time    = localtime(&calendar_time);
+  struct tm *local_time = localtime(&calendar_time);
   strftime(tbuf, 32, "%Y/%m/%d   %H:%M:%S %Z", local_time);
   std::string time_string(tbuf);
+#else
+  auto const local_time  = fmt::localtime(calendar_time);
+  auto       time_string = fmt::format("{:%Y/%m/%d   %H:%M:%S %Z}", local_time);
+#endif
   return time_string;
 }
 
@@ -294,7 +300,7 @@ namespace {
         "{0}   Title: {2}\n"
         "{0}          Dim = {3}, Nodes = {5}, Elements = {6}, Faces = {20}, Edges = {21}\n"
         "{0}          Element Blocks = {4}, Face Blocks = {10}, Edge Blocks = {9}, Nodesets = {7}, "
-        "Sidesets = {8}\n"
+        "Sidesets = {8}, Assemblies = {22}\n"
         "{0}    Vars: Global = {11}, Nodal = {12}, Element = {13}, Face = {17}, Edge = {18}, "
         "Nodeset = {14}, Sideset = {15}, Times = {16}\n\n",
         prefix, fi.realpath(), file.Title(), file.Dimension(), file.Num_Element_Blocks(),
@@ -302,7 +308,7 @@ namespace {
         file.Num_Edge_Blocks(), file.Num_Face_Blocks(), file.Num_Global_Vars(),
         file.Num_Nodal_Vars(), file.Num_Element_Vars(), file.Num_NS_Vars(), file.Num_SS_Vars(),
         file.Num_Times(), file.Num_FB_Vars(), file.Num_EB_Vars(), count, file.Num_Faces(),
-        file.Num_Edges());
+        file.Num_Edges(), file.Num_Assembly());
   }
 
   void initialize(std::vector<MinMaxData> &mm_entity, size_t size, const ToleranceType &ttype)
@@ -436,6 +442,9 @@ namespace {
       if (!interFace.quiet_flag) {
         output_init(file1, 1, "");
         output_init(file2, 2, "");
+        if (interFace.pedantic) {
+          fmt::print("  Pedantic Checking Enabled\n");
+        }
         if (!interFace.command_file.empty()) {
           FileInfo fi(interFace.command_file);
           fmt::print("  COMMAND FILE: {}\n\n", fi.realpath());
@@ -1063,8 +1072,7 @@ bool Equal_Values(const double *values, size_t count, double *value)
 {
   SMART_ASSERT(values != nullptr);
   *value = values[0];
-  return (std::adjacent_find(values, values + count, std::not_equal_to<double>()) ==
-          values + count);
+  return (std::adjacent_find(values, values + count, std::not_equal_to<>()) == values + count);
 }
 
 template <typename INT>

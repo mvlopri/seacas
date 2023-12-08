@@ -8,16 +8,21 @@
 #define DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES
 #define DOCTEST_CONFIG_SUPER_FAST_ASSERTS
 #define DOCTEST_CONFIG_NO_MULTITHREADING
+#include "Ioss_ZoneConnectivity.h"
+#include "cgns/Iocgns_StructuredZoneData.h"
+#include "cgns/Iocgns_Utils.h"
+#include <assert.h>
 #include <doctest.h>
-
-#include <Ioss_ZoneConnectivity.h>
-#include <cgns/Iocgns_StructuredZoneData.h>
-#include <cgns/Iocgns_Utils.h>
-#include <exception>
-#include <fmt/ostream.h>
 #include <map>
 #include <numeric>
+#include <set>
+#include <stddef.h>
+#include <stdint.h>
+#include <string>
 #include <vector>
+
+#include "Ioss_CodeTypes.h"
+#include "Ioss_Utils.h"
 
 namespace {
   int64_t generate_guid(size_t id, int rank, int proc_count)
@@ -280,6 +285,18 @@ DOCTEST_TEST_CASE("cube_2blocks")
       check_split_assign(zones, load_balance_tolerance, proc_count, 0.9, 1.1);
     }
   }
+  cleanup(zones);
+}
+
+DOCTEST_TEST_CASE("2blocks_example")
+{
+  int                                       zone = 1;
+  std::vector<Iocgns::StructuredZoneData *> zones;
+  zones.push_back(new Iocgns::StructuredZoneData(zone++, "8x4x1"));
+  zones.push_back(new Iocgns::StructuredZoneData(zone++, "8x8x1"));
+  double load_balance_tolerance = 1.1;
+
+  check_split_assign(zones, load_balance_tolerance, 4, 0.9, 1.1);
   cleanup(zones);
 }
 

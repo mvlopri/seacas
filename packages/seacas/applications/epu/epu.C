@@ -1680,6 +1680,7 @@ namespace {
 
       for (int i = 0; i < global.assemblyCount; i++) {
         delete[] assemblies[i].entity_list;
+        // This is `calloc`d in `ex_get_assemblies` call.
         free(assemblies[i].name);
       }
     }
@@ -1755,8 +1756,8 @@ namespace {
       char *qa_record[1][4];
     };
 
-    int   num_qa_records = ex_inquire_int(id, EX_INQ_QA);
-    auto *qaRecord       = new qa_element[num_qa_records + 1];
+    int                     num_qa_records = ex_inquire_int(id, EX_INQ_QA);
+    std::vector<qa_element> qaRecord(num_qa_records + 1);
     for (int i = 0; i < num_qa_records + 1; i++) {
       for (int j = 0; j < 4; j++) {
         qaRecord[i].qa_record[0][j]    = new char[MAX_STR_LENGTH + 1];
@@ -1776,11 +1777,20 @@ namespace {
     copy_string(qaRecord[num_qa_records].qa_record[0][1], qainfo[2], MAX_STR_LENGTH + 1); // Version
 
     time_t date_time = std::time(nullptr);
-    auto  *lt        = std::localtime(&date_time);
-    buffer           = fmt::format("{:%Y/%m/%d}", *lt);
+#if defined __NVCC__
+    auto *lt = std::localtime(&date_time);
+    buffer   = fmt::format("{:%Y/%m/%d}", *lt);
+#else
+    auto const lt = fmt::localtime(date_time);
+    buffer        = fmt::format("{:%Y/%m/%d}", lt);
+#endif
     copy_string(qaRecord[num_qa_records].qa_record[0][2], buffer, MAX_STR_LENGTH + 1);
 
+#if defined __NVCC__
     buffer = fmt::format("{:%H:%M:%S}", *lt);
+#else
+    buffer = fmt::format("{:%H:%M:%S}", lt);
+#endif
     copy_string(qaRecord[num_qa_records].qa_record[0][3], buffer, MAX_STR_LENGTH + 1);
 
     error = ex_put_qa(id_out, num_qa_records + 1, qaRecord[0].qa_record);
@@ -1793,7 +1803,6 @@ namespace {
         delete[] qaRecord[i].qa_record[0][j];
       }
     }
-    delete[] qaRecord;
   }
 
   template <typename T, typename INT>
@@ -1893,9 +1902,9 @@ namespace {
     gnodes.reserve(node_cmap.size());
     gprocs.reserve(node_cmap.size());
 
-    for (auto &np : node_cmap) {
-      gnodes.push_back(np.first);
-      gprocs.push_back(np.second);
+    for (auto &[node, proc] : node_cmap) {
+      gnodes.push_back(node);
+      gprocs.push_back(proc);
     }
 
     // NOTE: This is inefficient in general since going in and out of define mode.
@@ -4567,10 +4576,10 @@ namespace {
 
     std::string var_name;
     int         out_position = -1;
-    for (const auto &variable_name : variable_names) {
-      if (variable_name.second > 0) {
-        if (var_name != variable_name.first) {
-          var_name = variable_name.first;
+    for (const auto &[variable_name, variable_block] : variable_names) {
+      if (variable_block > 0) {
+        if (var_name != variable_name) {
+          var_name = variable_name;
           // Find which exodus variable matches this name
           out_position = -1;
           for (size_t j = 0; j < exo_names.size(); j++) {
@@ -4593,7 +4602,7 @@ namespace {
         // Find out which block corresponds to the specified id.
         int block = -1;
         for (size_t b = 0; b < global.count(vars.objectType); b++) {
-          if (glob_blocks[b].id == variable_name.second) {
+          if (glob_blocks[b].id == variable_block) {
             block = b;
             break;
           }
@@ -4604,7 +4613,7 @@ namespace {
           fmt::print(
               errmsg,
               "ERROR: (EPU) User-specified block id of {} for variable '{}' does not exist.\n",
-              variable_name.second, variable_name.first);
+              variable_block, variable_name);
           throw std::runtime_error(errmsg.str());
         }
 
@@ -4612,7 +4621,7 @@ namespace {
         if (global.truthTable[static_cast<int>(vars.objectType)][truth_table_loc] == 0) {
           std::ostringstream errmsg;
           fmt::print(errmsg, "ERROR: (EPU) Variable '{}' does not exist on block {}.\n",
-                     variable_name.first, variable_name.second);
+                     variable_name, variable_block);
           throw std::runtime_error(errmsg.str());
         }
         global.truthTable[static_cast<int>(vars.objectType)][truth_table_loc] = 1;

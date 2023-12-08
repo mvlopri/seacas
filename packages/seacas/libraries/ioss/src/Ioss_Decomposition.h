@@ -9,18 +9,18 @@
 
 #include "ioss_export.h"
 
-#include <Ioss_CodeTypes.h>
-#include <Ioss_Map.h>
-#include <Ioss_ParallelUtils.h>
-#include <Ioss_PropertyManager.h>
+#include "Ioss_CodeTypes.h"
+#include "Ioss_Map.h"
+#include "Ioss_ParallelUtils.h"
+#include "Ioss_PropertyManager.h"
 #include <algorithm>
 #include <cassert>
 #include <map>
 #include <string>
 #include <vector>
 
-#include <Ioss_Utils.h>
-#include <Ioss_ParallelUtils.h>
+#include "Ioss_ParallelUtils.h"
+#include "Ioss_Utils.h"
 
 #if !defined(NO_PARMETIS_SUPPORT)
 #include <parmetis.h>
@@ -133,27 +133,44 @@ namespace Ioss {
     bool distributionFactorConstant{false}; // T if all distribution factors the same value.
   };
 
-  IOSS_EXPORT size_t get_all_block_ioss_element_size(const std::vector<BlockDecompositionData> &blocks);
+  class IOSS_EXPORT ElementBlockBatchOffset
+  {
+  public:
+    explicit ElementBlockBatchOffset(const std::vector<BlockDecompositionData> &data) : m_data(data)
+    {
+    }
 
-  IOSS_EXPORT size_t get_all_block_ioss_offset_size(const std::vector<BlockDecompositionData> &blocks,
-                                                    const std::vector<int>& block_component_count);
+    ElementBlockBatchOffset()                                = delete;
+    ElementBlockBatchOffset(const ElementBlockBatchOffset &) = delete;
+    ElementBlockBatchOffset(ElementBlockBatchOffset &&)      = delete;
 
-  IOSS_EXPORT std::vector<size_t> get_all_block_ioss_offset(const std::vector<BlockDecompositionData> &blocks,
-                                                            const std::vector<int>& block_component_count);
+    ~ElementBlockBatchOffset() = default;
 
-  IOSS_EXPORT std::vector<size_t> get_all_block_import_offset(const std::vector<BlockDecompositionData> &blocks,
-                                                              const std::vector<int>& block_component_count);
+    size_t get_ioss_element_size(const std::vector<int64_t> &blockSubsetIndex) const;
 
-  IOSS_EXPORT std::vector<int>
-  get_all_block_connectivity_ioss_component_count(const std::vector<BlockDecompositionData> &blocks);
+    std::vector<size_t> get_ioss_offset(const std::vector<int64_t> &blockSubsetIndex,
+                                        const std::vector<int>     &blockComponentCount) const;
 
-  IOSS_EXPORT size_t get_all_block_connectivity_ioss_offset_size(const std::vector<BlockDecompositionData> &blocks);
+    std::vector<size_t> get_import_offset(const std::vector<int64_t> &blockSubsetIndex,
+                                          const std::vector<int>     &blockComponentCount) const;
 
-  IOSS_EXPORT std::vector<size_t>
-  get_all_block_connectivity_ioss_offset(const std::vector<BlockDecompositionData> &blocks);
+    size_t get_connectivity_ioss_offset_size(const std::vector<int64_t> &blockSubsetIndex) const;
 
-  IOSS_EXPORT std::vector<size_t>
-  get_all_block_connectivity_import_offset(const std::vector<BlockDecompositionData> &blocks);
+    std::vector<int>
+    get_connectivity_ioss_component_count(const std::vector<int64_t> &blockSubsetIndex) const;
+
+  private:
+    const std::vector<BlockDecompositionData> &m_data;
+
+    size_t get_ioss_offset_size(const std::vector<int64_t> &blockSubsetIndex,
+                                const std::vector<int>     &blockComponentCount) const;
+
+    std::vector<size_t>
+    get_connectivity_ioss_offset(const std::vector<int64_t> &blockSubsetIndex) const;
+
+    std::vector<size_t>
+    get_connectivity_import_offset(const std::vector<int64_t> &blockSubsetIndex) const;
+  };
 
   template <typename INT> class Decomposition
   {
@@ -524,18 +541,19 @@ namespace Ioss {
     }
 
     template <typename T, typename U>
-    std::vector<size_t> do_communicate_all_block_data(T *file_data, U *ioss_data,
-                                                      const std::vector<BlockDecompositionData> &blocks,
-                                                      const std::vector<size_t> &file_offset,
-                                                      const std::vector<int>& block_component_count) const
+    std::vector<size_t> do_communicate_entity_data(
+        T *file_data, U *ioss_data, const std::vector<BlockDecompositionData> &blocks,
+        const std::vector<int64_t> &blockSubsetIndex, const std::vector<size_t> &fileOffset,
+        const std::vector<int> &blockComponentCount) const
     {
       size_t export_size = 0;
       size_t import_size = 0;
 
-      for(size_t blk_seq = 0; blk_seq < blocks.size(); blk_seq++) {
-        const Ioss::BlockDecompositionData& blk = blocks[blk_seq];
+      for (size_t bsi = 0; bsi < blockSubsetIndex.size(); bsi++) {
+        int64_t                             blk_seq = blockSubsetIndex[bsi];
+        const Ioss::BlockDecompositionData &blk     = blocks[blk_seq];
 
-        size_t comp_count = block_component_count[blk_seq];
+        size_t comp_count = blockComponentCount[bsi];
         export_size += blk.exportMap.size() * comp_count;
         import_size += blk.importMap.size() * comp_count;
       }
@@ -544,17 +562,18 @@ namespace Ioss {
       exports.reserve(export_size);
 
       Ioss::ParallelUtils util_(m_comm);
-      int nProc = util_.parallel_size();
+      int                 nProc = util_.parallel_size();
 
-      for(int proc = 0; proc<nProc; proc++) {
-        for(size_t blk_seq = 0; blk_seq < blocks.size(); blk_seq++) {
-          const Ioss::BlockDecompositionData& blk = blocks[blk_seq];
-          size_t comp_count = block_component_count[blk_seq];
-          size_t fileDataOffset = file_offset[blk_seq];
+      for (int proc = 0; proc < nProc; proc++) {
+        for (size_t bsi = 0; bsi < blockSubsetIndex.size(); bsi++) {
+          int64_t                             blk_seq        = blockSubsetIndex[bsi];
+          const Ioss::BlockDecompositionData &blk            = blocks[blk_seq];
+          size_t                              comp_count     = blockComponentCount[bsi];
+          size_t                              fileDataOffset = fileOffset[bsi];
 
-          for (int n = 0; n<blk.exportCount[proc]; n++) {
+          for (int n = 0; n < blk.exportCount[proc]; n++) {
             int exportIndex = blk.exportIndex[proc] + n;
-            int i = blk.exportMap[exportIndex];
+            int i           = blk.exportMap[exportIndex];
 
             for (size_t j = 0; j < comp_count; j++) {
               size_t fileIndex = fileDataOffset + i * comp_count + j;
@@ -569,18 +588,19 @@ namespace Ioss {
       std::vector<int64_t> import_count(nProc, 0);
       std::vector<int64_t> import_disp(nProc, 0);
 
-      for(size_t blk_seq = 0; blk_seq < blocks.size(); blk_seq++) {
-        const Ioss::BlockDecompositionData& blk = blocks[blk_seq];
-        size_t comp_count = block_component_count[blk_seq];
+      for (size_t bsi = 0; bsi < blockSubsetIndex.size(); bsi++) {
+        int64_t                             blk_seq    = blockSubsetIndex[bsi];
+        const Ioss::BlockDecompositionData &blk        = blocks[blk_seq];
+        size_t                              comp_count = blockComponentCount[bsi];
 
         int proc = 0;
         for (int i : blk.exportCount) {
-          export_count[proc++] += comp_count*i;
+          export_count[proc++] += comp_count * i;
         }
 
         proc = 0;
         for (int i : blk.importCount) {
-          import_count[proc++] += comp_count*i;
+          import_count[proc++] += comp_count * i;
         }
       }
 
@@ -591,58 +611,67 @@ namespace Ioss {
       Ioss::Utils::generate_index(import_disp);
 
       std::vector<U> imports(import_size);
-      Ioss::MY_Alltoallv(exports, export_count, export_disp, imports, import_count, import_disp, m_comm);
+      Ioss::MY_Alltoallv(exports, export_count, export_disp, imports, import_count, import_disp,
+                         m_comm);
       show_progress("\tCommunication 1 finished");
 
-      std::vector<size_t> ioss_offset = Ioss::get_all_block_ioss_offset(blocks, block_component_count);
-      std::vector<size_t> import_offset = Ioss::get_all_block_import_offset(blocks, block_component_count);
+      Ioss::ElementBlockBatchOffset batchOffset(blocks);
+      std::vector<size_t>           iossOffset =
+          batchOffset.get_ioss_offset(blockSubsetIndex, blockComponentCount);
+      std::vector<size_t> importOffset =
+          batchOffset.get_import_offset(blockSubsetIndex, blockComponentCount);
 
       // Map local and imported data to ioss_data.
-      for(size_t blk_seq = 0; blk_seq < blocks.size(); blk_seq++) {
-        const Ioss::BlockDecompositionData& block = blocks[blk_seq];
-        size_t comp_count = block_component_count[blk_seq];
+      for (size_t bsi = 0; bsi < blockSubsetIndex.size(); bsi++) {
+        int64_t                             blk_seq    = blockSubsetIndex[bsi];
+        const Ioss::BlockDecompositionData &block      = blocks[blk_seq];
+        size_t                              comp_count = blockComponentCount[bsi];
 
         for (size_t i = 0; i < block.localMap.size(); i++) {
           for (size_t j = 0; j < comp_count; j++) {
-            unsigned fileIndex = file_offset[blk_seq] + block.localMap[i] * comp_count + j;
-            unsigned iossIndex = ioss_offset[blk_seq] + (i + block.localIossOffset) * comp_count + j;
+            size_t fileIndex     = fileOffset[bsi] + block.localMap[i] * comp_count + j;
+            size_t iossIndex     = iossOffset[bsi] + (i + block.localIossOffset) * comp_count + j;
             ioss_data[iossIndex] = file_data[fileIndex];
           }
         }
 
         for (size_t i = 0; i < block.importMap.size(); i++) {
           for (size_t j = 0; j < comp_count; j++) {
-            unsigned importIndex = import_offset[blk_seq] + i * comp_count + j;
+            size_t importIndex = importOffset[bsi] + i * comp_count + j;
 
-            size_t dataOffset = ioss_offset[blk_seq];
-            unsigned iossIndex = dataOffset + block.importMap[i] * comp_count + j;
+            size_t dataOffset = iossOffset[bsi];
+            size_t iossIndex  = dataOffset + block.importMap[i] * comp_count + j;
 
             ioss_data[iossIndex] = imports[importIndex];
           }
         }
       }
 
-      return ioss_offset;
+      return iossOffset;
     }
 
     template <typename T, typename U>
-    std::vector<size_t> communicate_all_block_data(T *file_data, U *ioss_data,
-                                                   const std::vector<BlockDecompositionData> &blocks,
-                                                   const std::vector<size_t> &file_offset,
-                                                   const std::vector<int>& block_component_count) const
+    std::vector<size_t> communicate_entity_data(T *file_data, U *ioss_data,
+                                                const std::vector<BlockDecompositionData> &blocks,
+                                                const std::vector<int64_t> &blockSubsetIndex,
+                                                const std::vector<size_t>  &fileOffset,
+                                                const std::vector<int> &blockComponentCount) const
     {
       show_progress(__func__);
       if (m_method == "LINEAR") {
         // For "LINEAR" decomposition method, the `file_data` is the
         // same as `ioss_data` Transfer all local data from file_data
         // to ioss_data...
-        auto size = file_offset[blocks.size()];
+        auto size = fileOffset[blockSubsetIndex.size()];
         std::copy(file_data, file_data + size, ioss_data);
 
-        return Ioss::get_all_block_ioss_offset(blocks, block_component_count);;
+        Ioss::ElementBlockBatchOffset batchOffset(blocks);
+        return batchOffset.get_ioss_offset(blockSubsetIndex, blockComponentCount);
+        ;
       }
 
-      auto retval  = do_communicate_all_block_data(file_data, ioss_data, blocks, file_offset, block_component_count);
+      auto retval = do_communicate_entity_data(file_data, ioss_data, blocks, blockSubsetIndex,
+                                               fileOffset, blockComponentCount);
 
       return retval;
     }

@@ -1,21 +1,20 @@
-// Copyright(C) 1999-2022 National Technology & Engineering Solutions
+// Copyright(C) 1999-2023 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_Field.h> // for Field, etc
-#include <Ioss_Map.h>
-#include <Ioss_SmartAssert.h>
-#include <Ioss_Sort.h>
-#include <Ioss_Utils.h> // for IOSS_ERROR
+#include "Ioss_Field.h" // for Field, etc
+#include "Ioss_Map.h"
+#include "Ioss_SmartAssert.h"
+#include "Ioss_Utils.h" // for IOSS_ERROR
 #include <cstddef>      // for size_t
 #include <fmt/ostream.h>
-#include <iterator> // for insert_iterator, inserter
 #include <numeric>
 #include <sstream>
-#include <string>
 #include <vector> // for vector, vector<>::iterator, etc
+
+#include "Ioss_CodeTypes.h"
 
 // If defined, then only build m_reverseMap when it is used.
 #undef USE_LAZY_REVERSE
@@ -96,132 +95,139 @@ void Ioss::Map::set_size(size_t entity_count)
 }
 
 void Ioss::Map::build_reverse_map() { build_reverse_map(m_map.size() - 1, 0); }
-void Ioss::Map::build_reverse_map_no_lock() { build_reverse_map__(m_map.size() - 1, 0); }
+void Ioss::Map::build_reverse_map_no_lock() { build_reverse_map_nl(m_map.size() - 1, 0); }
 void Ioss::Map::build_reverse_map(int64_t num_to_get, int64_t offset)
 {
   IOSS_FUNC_ENTER(m_);
-  build_reverse_map__(num_to_get, offset);
+  build_reverse_map_nl(num_to_get, offset);
 }
 
-void Ioss::Map::build_reverse_map__(int64_t num_to_get, int64_t offset)
+void Ioss::Map::build_reverse_map_nl(int64_t num_to_get, int64_t offset)
 {
   // Stored as an unordered map -- key:global_id, value:local_id
   if (!is_sequential()) {
 #if defined MAP_USE_SORTED_VECTOR
-  ReverseMapContainer new_ids;
-  if (m_reverse.empty()) {
-    // This is first time that the m_reverse map is being built..
-    // m_map is no longer  1-to-1.
-    // Just iterate m_map and add all values that are non-zero
-    new_ids.reserve(m_map.size() - 1);
-    for (size_t i = 1; i < m_map.size(); i++) {
-      if (m_map[i] != 0) {
-        new_ids.emplace_back(m_map[i], i);
+    ReverseMapContainer new_ids;
+    if (m_reverse.empty()) {
+      // This is first time that the m_reverse map is being built..
+      // m_map is no longer  1-to-1.
+      // Just iterate m_map and add all values that are non-zero
+      new_ids.reserve(m_map.size() - 1);
+      for (size_t i = 1; i < m_map.size(); i++) {
+        if (m_map[i] != 0) {
+          new_ids.emplace_back(m_map[i], i);
+        }
       }
     }
-  }
-  else {
-    new_ids.reserve(num_to_get);
-    for (int64_t i = 0; i < num_to_get; i++) {
-      int64_t local_id = offset + i + 1;
-      new_ids.emplace_back(m_map[local_id], local_id);
+    else {
+      new_ids.reserve(num_to_get);
+      for (int64_t i = 0; i < num_to_get; i++) {
+        int64_t local_id = offset + i + 1;
+        new_ids.emplace_back(m_map[local_id], local_id);
 
-      if (m_map[local_id] <= 0) {
-        std::ostringstream errmsg;
-        fmt::print(errmsg,
-                   "\nERROR: {0} map detected non-positive global id {1} for {0} with local id {2} "
-                   "on processor {3}.\n",
-                   m_entityType, m_map[local_id], local_id, m_myProcessor);
-        IOSS_ERROR(errmsg);
+        if (m_map[local_id] <= 0) {
+          std::ostringstream errmsg;
+          fmt::print(
+              errmsg,
+              "\nERROR: {0} map detected non-positive global id {1} for {0} with local id {2} "
+              "on processor {3}.\n",
+              m_entityType, m_map[local_id], local_id, m_myProcessor);
+          IOSS_ERROR(errmsg);
+        }
       }
     }
-  }
 
-  // new_ids is a vector of pairs <global_id, local_id>
-  Ioss::sort(new_ids);
+    // new_ids is a vector of pairs <global_id, local_id>
+    Ioss::sort(new_ids);
 
-  int64_t new_id_min = new_ids.empty() ? 0 : new_ids.front().first;
-  int64_t old_id_max = m_reverse.empty() ? 0 : m_reverse.back().first;
-  if (new_ids.size() + 1 == m_map.size()) {
-    SMART_ASSERT(m_reverse.empty() || m_reverse.size() + 1 == m_map.size());
-    new_ids.swap(m_reverse);
-  }
-  else if (new_id_min > old_id_max) {
-    m_reverse.insert(m_reverse.end(), new_ids.begin(), new_ids.end());
-  }
-  else {
-    // Copy reverseElementMap to old_ids, empty reverseElementMap.
-    ReverseMapContainer old_ids;
-    old_ids.swap(m_reverse);
-    SMART_ASSERT(m_reverse.empty());
+    int64_t new_id_min = new_ids.empty() ? 0 : new_ids.front().first;
+    int64_t old_id_max = m_reverse.empty() ? 0 : m_reverse.back().first;
+    if (new_ids.size() + 1 == m_map.size()) {
+      SMART_ASSERT(m_reverse.empty() || m_reverse.size() + 1 == m_map.size());
+      new_ids.swap(m_reverse);
+    }
+    else if (new_id_min > old_id_max) {
+      m_reverse.insert(m_reverse.end(), new_ids.begin(), new_ids.end());
+    }
+    else {
+      // Copy reverseElementMap to old_ids, empty reverseElementMap.
+      ReverseMapContainer old_ids;
+      old_ids.swap(m_reverse);
+      SMART_ASSERT(m_reverse.empty());
 
-    // Merge old_ids and new_ids to reverseElementMap.
-    m_reverse.reserve(old_ids.size() + new_ids.size());
-    std::merge(
-        old_ids.begin(), old_ids.end(), new_ids.begin(), new_ids.end(),
-        std::inserter(m_reverse, m_reverse.begin()),
-        [](const Ioss::IdPair &lhs, const Ioss::IdPair &rhs) { return lhs.first < rhs.first; });
-  }
+      // Merge old_ids and new_ids to reverseElementMap.
+      m_reverse.reserve(old_ids.size() + new_ids.size());
+      std::merge(
+          old_ids.begin(), old_ids.end(), new_ids.begin(), new_ids.end(),
+          std::inserter(m_reverse, m_reverse.begin()),
+          [](const Ioss::IdPair &lhs, const Ioss::IdPair &rhs) { return lhs.first < rhs.first; });
+    }
 
-  // Check for duplicate ids...
-  // Maybe debug only...
-  verify_no_duplicate_ids(m_reverse);
+    // Check for duplicate ids...
+    // Maybe debug only...
+    verify_no_duplicate_ids(m_reverse);
 #else
-  if (m_reverse.empty()) {
-    // This is first time that the m_reverse map is being built..
-    // m_map is no longer  1-to-1.
-    // Just iterate m_map and add all values that are non-zero
-    m_reverse.max_load_factor(0.95);
-    m_reverse.reserve(m_map.size());
-    for (size_t i = 1; i < m_map.size(); i++) {
-      if (m_map[i] != 0) {
-        bool ok = m_reverse.insert({m_map[i], i}).second;
+    if (m_reverse.empty()) {
+      // This is first time that the m_reverse map is being built..
+      // m_map is no longer  1-to-1.
+      // Just iterate m_map and add all values that are non-zero
+      m_reverse.max_load_factor(0.95);
+      m_reverse.reserve(m_map.size());
+      for (size_t i = 1; i < m_map.size(); i++) {
+        if (m_map[i] != 0) {
+          bool ok = m_reverse.insert({m_map[i], i}).second;
+          if (!ok) {
+            std::ostringstream errmsg;
+            fmt::print(
+                errmsg,
+                "\nERROR: Duplicate {0} global id detected on processor {1}, filename '{2}'.\n"
+                "       Global id {3} assigned to local {0}s {4} and {5}.\n",
+                m_entityType, m_myProcessor, m_filename, m_map[i], i, m_reverse[m_map[i]]);
+            IOSS_ERROR(errmsg);
+          }
+        }
+      }
+    }
+    else {
+      for (int64_t i = 0; i < num_to_get; i++) {
+        int64_t local_id = offset + i + 1;
+        bool    ok       = m_reverse.insert({m_map[local_id], local_id}).second;
         if (!ok) {
-          std::ostringstream errmsg;
-          fmt::print(errmsg,
-                     "\nERROR: Duplicate {0} global id detected on processor {1}, filename '{2}'.\n"
-                     "       Global id {3} assigned to local {0}s {4} and {5}.\n",
-                     m_entityType, m_myProcessor, m_filename, m_map[i], i, m_reverse[m_map[i]]);
-          IOSS_ERROR(errmsg);
+          if (local_id != m_reverse[m_map[local_id]]) {
+            std::ostringstream errmsg;
+            fmt::print(
+                errmsg,
+                "\nERROR: Duplicate {0} global id detected on processor {1}, filename '{2}'.\n"
+                "       Global id {3} assigned to local {0}s {4} and {5}.\n",
+                m_entityType, m_myProcessor, m_filename, m_map[local_id], local_id,
+                m_reverse[m_map[local_id]]);
+            IOSS_ERROR(errmsg);
+          }
         }
-      }
-    }
-  }
-  else {
-    for (int64_t i = 0; i < num_to_get; i++) {
-      int64_t local_id = offset + i + 1;
-      bool    ok       = m_reverse.insert({m_map[local_id], local_id}).second;
-      if (!ok) {
-        if (local_id != m_reverse[m_map[local_id]]) {
-          std::ostringstream errmsg;
-          fmt::print(errmsg,
-                     "\nERROR: Duplicate {0} global id detected on processor {1}, filename '{2}'.\n"
-                     "       Global id {3} assigned to local {0}s {4} and {5}.\n",
-                     m_entityType, m_myProcessor, m_filename, m_map[local_id], local_id,
-                     m_reverse[m_map[local_id]]);
-          IOSS_ERROR(errmsg);
-        }
-      }
 
-      if (m_map[local_id] <= 0) {
-        std::ostringstream errmsg;
-        fmt::print(errmsg,
-                   "\nERROR: {0} map detected non-positive global id {1} for {0} with local id {2} "
-                   "on processor {3}.\n",
-                   m_entityType, m_map[local_id], local_id, m_myProcessor);
-        IOSS_ERROR(errmsg);
+        if (m_map[local_id] <= 0) {
+          std::ostringstream errmsg;
+          fmt::print(
+              errmsg,
+              "\nERROR: {0} map detected non-positive global id {1} for {0} with local id {2} "
+              "on processor {3}.\n",
+              m_entityType, m_map[local_id], local_id, m_myProcessor);
+          IOSS_ERROR(errmsg);
+        }
       }
     }
-  }
 #if IOSS_DEBUG_OUTPUT
-  fmt::print("[{}] ({}) Map Size         = {}\n", m_myProcessor, m_entityType, m_map.size());
-  fmt::print("[{}] ({}) Size             = {}\n", m_myProcessor, m_entityType, m_reverse.size());
-  fmt::print("[{}] ({}) Bucket Count     = {}\n", m_myProcessor, m_entityType, m_reverse.bucket_count());
-  fmt::print("[{}] ({}) Load Factor      = {}\n", m_myProcessor, m_entityType, m_reverse.load_factor());
-  fmt::print("[{}] ({}) Max Load Factor  = {}\n\n", m_myProcessor, m_entityType, m_reverse.max_load_factor());
+    fmt::print("[{}] ({}) Map Size         = {}\n", m_myProcessor, m_entityType, m_map.size());
+    fmt::print("[{}] ({}) Size             = {}\n", m_myProcessor, m_entityType, m_reverse.size());
+    fmt::print("[{}] ({}) Bucket Count     = {}\n", m_myProcessor, m_entityType,
+               m_reverse.bucket_count());
+    fmt::print("[{}] ({}) Load Factor      = {}\n", m_myProcessor, m_entityType,
+               m_reverse.load_factor());
+    fmt::print("[{}] ({}) Max Load Factor  = {}\n\n", m_myProcessor, m_entityType,
+               m_reverse.max_load_factor());
 #endif
 #endif
-}
+  }
 }
 
 #if defined MAP_USE_SORTED_VECTOR
@@ -278,7 +284,7 @@ bool Ioss::Map::set_map(INT *ids, size_t count, size_t offset, bool in_define_mo
       set_is_sequential(false);
 #if !defined USE_LAZY_REVERSE
       if (m_map.size() - 1 > count) {
-        build_reverse_map__(m_map.size() - 1, 0);
+        build_reverse_map_nl(m_map.size() - 1, 0);
       }
 #endif
       m_offset = 0;
@@ -306,7 +312,7 @@ bool Ioss::Map::set_map(INT *ids, size_t count, size_t offset, bool in_define_mo
 #if defined USE_LAZY_REVERSE
   // Build this now before we redefine an entry
   if (!in_define_mode && changed) {
-    build_reverse_map__(m_map.size() - 1, 0);
+    build_reverse_map_nl(m_map.size() - 1, 0);
   }
 #endif
 
@@ -334,7 +340,7 @@ bool Ioss::Map::set_map(INT *ids, size_t count, size_t offset, bool in_define_mo
       m_reverse.clear();
     }
 #if !defined USE_LAZY_REVERSE
-    build_reverse_map__(count, offset);
+    build_reverse_map_nl(count, offset);
 #endif
   }
   else if (changed) {
@@ -344,7 +350,7 @@ bool Ioss::Map::set_map(INT *ids, size_t count, size_t offset, bool in_define_mo
     // is if the ids order was redefined after the STATE_MODEL
     // phase... This is 0-based and used for
     // remapping output and input TRANSIENT fields.
-    build_reorder_map__(offset, count);
+    build_reorder_map_nl(offset, count);
   }
   return changed;
 }
@@ -370,7 +376,7 @@ template <typename INT> void Ioss::Map::reverse_map_data(INT *data, size_t count
   if (!is_sequential()) {
     for (size_t i = 0; i < count; i++) {
       INT global_id = data[i];
-      data[i]       = (INT)global_to_local__(global_id, true);
+      data[i]       = (INT)global_to_local_nl(global_id, true);
     }
   }
   else if (m_offset != 0) {
@@ -511,7 +517,7 @@ size_t Ioss::Map::map_field_to_db_scalar_order(T *variables, std::vector<double>
   return num_out;
 }
 
-void Ioss::Map::build_reorder_map__(int64_t start, int64_t count)
+void Ioss::Map::build_reorder_map_nl(int64_t start, int64_t count)
 {
   // This routine builds a map that relates the current node id order
   // to the original node ordering in affect at the time the file was
@@ -541,7 +547,7 @@ void Ioss::Map::build_reorder_map__(int64_t start, int64_t count)
       int64_t my_end = start + count;
       for (int64_t i = start; i < my_end; i++) {
         int64_t global_id     = m_map[i + 1];
-        int64_t orig_local_id = global_to_local__(global_id) - 1;
+        int64_t orig_local_id = global_to_local_nl(global_id) - 1;
 
         // The reordering should only be a permutation of the original
         // ordering within this entity block...
@@ -569,7 +575,7 @@ void Ioss::Map::build_reorder_map__(int64_t start, int64_t count)
   int64_t my_end = start + count;
   for (int64_t i = start; i < my_end; i++) {
     int64_t global_id     = m_map[i + 1];
-    int64_t orig_local_id = global_to_local__(global_id) - 1;
+    int64_t orig_local_id = global_to_local_nl(global_id) - 1;
 
     // The reordering should only be a permutation of the original
     // ordering within this entity block...
@@ -586,10 +592,10 @@ void Ioss::Map::build_reorder_map__(int64_t start, int64_t count)
 int64_t Ioss::Map::global_to_local(int64_t global, bool must_exist) const
 {
   IOSS_FUNC_ENTER(m_);
-  return global_to_local__(global, must_exist);
+  return global_to_local_nl(global, must_exist);
 }
 
-int64_t Ioss::Map::global_to_local__(int64_t global, bool must_exist) const
+int64_t Ioss::Map::global_to_local_nl(int64_t global, bool must_exist) const
 {
   int64_t local = global;
 #if defined USE_LAZY_REVERSE
@@ -609,9 +615,7 @@ int64_t Ioss::Map::global_to_local__(int64_t global, bool must_exist) const
         m_reverse.begin(), m_reverse.end(), global,
         [](const Ioss::IdPair &lhs, int64_t val) -> bool { return lhs.first < val; });
     if (iter != m_reverse.end() && iter->first == global) {
-      if (iter != m_reverse.end()) {
-        local = iter->second;
-      }
+      local = iter->second;
     }
     else {
       local = 0;

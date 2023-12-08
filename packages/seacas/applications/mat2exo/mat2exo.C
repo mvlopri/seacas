@@ -53,7 +53,7 @@ mat_t *mat_file = nullptr; /* file for binary .mat input */
 
 /**********************************************************************/
 namespace {
-  std::array<std::string, 3> qainfo{"mat2exo", "2021/09/27", "4.06"};
+  const std::array<std::string, 3> qainfo{"mat2exo", "2021/09/27", "4.06"};
 }
 
 /**********************************************************************/
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
 
   const std::string ext{".exo"};
   std::string       line(argv[1]);
-  line = line.substr(0, line.find("."));
+  line = line.substr(0, line.find('.'));
   line += ext;
   int exo_file = ex_create(line.c_str(), EX_CLOBBER, &cpu_word_size, &io_word_size);
   if (exo_file < 0) {
@@ -357,7 +357,7 @@ std::vector<std::string> matGetStr(const std::string &name)
 {
   matvar_t *matvar = Mat_VarRead(mat_file, name.c_str());
   if (matvar == nullptr) {
-    return std::vector<std::string>();
+    return {};
   }
 
   if (matvar->dims[0] != 1) {

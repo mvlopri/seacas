@@ -4,23 +4,23 @@
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_DatabaseIO.h>
-#include <Ioss_GroupingEntity.h>
-#include <Ioss_Property.h>
-#include <Ioss_Region.h>
-#include <Ioss_Utils.h>
-#include <Ioss_VariableType.h>
+#include "Ioss_DatabaseIO.h"
+#include "Ioss_GroupingEntity.h"
+#include "Ioss_Property.h"
+#include "Ioss_Region.h"
+#include "Ioss_Utils.h"
+#include "Ioss_VariableType.h"
 #include <cassert>
 #include <cstddef>
 #include <fmt/ostream.h>
 #include <iostream>
 #include <string>
-#include <vector>
 
 #include "Ioss_CodeTypes.h"
 #include "Ioss_EntityType.h"
 #include "Ioss_Field.h"
 #include "Ioss_FieldManager.h"
+#include "Ioss_ParallelUtils.h"
 #include "Ioss_PropertyManager.h"
 #include "Ioss_State.h"
 
@@ -106,7 +106,7 @@ std::string Ioss::GroupingEntity::get_filename() const
 {
   // Ok for database_ to be nullptr at this point.
   if (database_ == nullptr) {
-    return std::string();
+    return {};
   }
 
   return database_->get_filename();
@@ -146,7 +146,7 @@ Ioss::State Ioss::GroupingEntity::get_state() const { return entityState; }
 
 /** \brief Calculate and get an implicit property.
  *
- *  These are calcuated from data stored in the EntityBlock instead of having
+ *  These are calculated from data stored in the EntityBlock instead of having
  *  an explicit value assigned. An example would be 'element_block_count' for a region.
  *  Note that even though this is a pure virtual function, an implementation
  *  is provided to return properties that are common to all 'block'-type grouping entities.
@@ -159,7 +159,7 @@ Ioss::Property Ioss::GroupingEntity::get_implicit_property(const std::string &my
   // These include:
   if (my_name == "attribute_count") {
     count_attributes();
-    return Ioss::Property(my_name, static_cast<int>(attributeCount));
+    return {my_name, static_cast<int>(attributeCount)};
   }
 
   // End of the line. No property of this name exists.
@@ -390,7 +390,7 @@ void Ioss::GroupingEntity::property_update(const std::string &property,
 bool Ioss::GroupingEntity::equal_(const Ioss::GroupingEntity &rhs, bool quiet) const
 {
   bool same = true;
-  if (this->entityName == rhs.entityName) {
+  if (this->entityName != rhs.entityName) {
     if (quiet) {
       return false;
     }
@@ -452,8 +452,8 @@ bool Ioss::GroupingEntity::equal_(const Ioss::GroupingEntity &rhs, bool quiet) c
     auto it = std::find(rhs_properties.begin(), rhs_properties.end(), lhs_property);
     if (it == rhs_properties.end()) {
       if (!quiet) {
-        fmt::print(Ioss::OUTPUT(), "WARNING: {}: INPUT property ({}) not found in OUTPUT\n", name(),
-                   lhs_property);
+        fmt::print(Ioss::OUTPUT(), "WARNING: {}: INPUT property ({}) not found in input #2\n",
+                   name(), lhs_property);
         same = false;
       }
       continue;
@@ -506,8 +506,8 @@ bool Ioss::GroupingEntity::equal_(const Ioss::GroupingEntity &rhs, bool quiet) c
     for (auto &rhs_property : rhs_properties) {
       auto it = std::find(lhs_properties.begin(), lhs_properties.end(), rhs_property);
       if (it == lhs_properties.end()) {
-        fmt::print(Ioss::OUTPUT(), "WARNING: {}: OUTPUT property ({}) not found in INPUT\n", name(),
-                   rhs_property);
+        fmt::print(Ioss::OUTPUT(), "WARNING: {}: OUTPUT property ({}) not found in input #1\n",
+                   name(), rhs_property);
         same = false;
       }
     }

@@ -1,4 +1,4 @@
-// Copyright(C) 1999-2020, 2022 National Technology & Engineering Solutions
+// Copyright(C) 1999-2020, 2022, 2023 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
@@ -8,11 +8,11 @@
 
 #include "iocatalyst_export.h"
 
+#include "Ioss_DBUsage.h"
+#include "Ioss_DatabaseIO.h"
 #include "Ioss_EntitySet.h"
 #include "Ioss_Region.h"  // for Region, SideSetContainer, etc
 #include "Ioss_SideSet.h" // for SideBlockContainer, SideSet
-#include <Ioss_DBUsage.h>
-#include <Ioss_DatabaseIO.h>
 
 #include "Ioss_Field.h" // for Field, etc
 
@@ -48,7 +48,7 @@ namespace Iocatalyst {
     void finalize_database() const override {}
 
     /** Return a string specifying underlying format of database (exodus, cgns, ...) */
-    const std::string get_format() const { return "CATALYST2"; }
+    std::string get_format() const override { return "CATALYST2"; }
 
     /** \brief Determine whether the database needs information about process ownership of nodes.
      *
@@ -77,21 +77,21 @@ namespace Iocatalyst {
     bool deep_copy() const { return this->useDeepCopy; }
 
   private:
-    bool open_group__(const std::string & /* group_name */) override { return false; }
-    bool create_subgroup__(const std::string & /* group_name */) override { return false; }
+    bool open_group_nl(const std::string & /* group_name */) override { return false; }
+    bool create_subgroup_nl(const std::string & /* group_name */) override { return false; }
 
-    bool begin__(Ioss::State state) override;
-    bool end__(Ioss::State state) override;
+    bool begin_nl(Ioss::State state) override;
+    bool end_nl(Ioss::State state) override;
 
-    void read_meta_data__() override;
-    void get_step_times__() override;
+    void read_meta_data_nl() override;
+    void get_step_times_nl() override;
 
-    bool begin_state__(int state, double time) override;
-    bool end_state__(int state, double time) override;
+    bool begin_state_nl(int state, double time) override;
+    bool end_state_nl(int state, double time) override;
 
     void
-    compute_block_membership__(Ioss::SideBlock * /* efblock */,
-                               std::vector<std::string> & /* block_membership */) const override
+    compute_block_membership_nl(Ioss::SideBlock * /* efblock */,
+                                std::vector<std::string> & /* block_membership */) const override
     {
     }
 

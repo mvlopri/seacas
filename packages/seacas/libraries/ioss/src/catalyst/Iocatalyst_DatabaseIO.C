@@ -1,4 +1,4 @@
-// Copyright(C) 1999-2021 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021, 2023 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
@@ -6,6 +6,8 @@
 
 #include <tokenize.h>
 
+#include "Ioss_Assembly.h"        // for Assembly
+#include "Ioss_CodeTypes.h"       // for HAVE_MPI
 #include "Ioss_CommSet.h"         // for CommSet
 #include "Ioss_DBUsage.h"         // for DatabaseUsage, etc
 #include "Ioss_DatabaseIO.h"      // for DatabaseIO
@@ -13,6 +15,7 @@
 #include "Ioss_EdgeSet.h"         // for EdgeSet
 #include "Ioss_ElementBlock.h"    // for ElementBlock
 #include "Ioss_ElementSet.h"      // for ElementSet
+#include "Ioss_ElementTopology.h" // for NameList
 #include "Ioss_EntityType.h"      // for EntityType::ELEMENTBLOCK
 #include "Ioss_FaceBlock.h"       // for FaceBlock
 #include "Ioss_FaceSet.h"         // for FaceSet
@@ -20,17 +23,14 @@
 #include "Ioss_Map.h"             // for Map, MapContainer
 #include "Ioss_NodeBlock.h"       // for NodeBlock
 #include "Ioss_NodeSet.h"         // for NodeSet
+#include "Ioss_ParallelUtils.h"   // for ParallelUtils, etc
 #include "Ioss_Property.h"        // for Property
+#include "Ioss_Region.h"          // for Region
+#include "Ioss_SerializeIO.h"     // for SerializeIO
 #include "Ioss_SideBlock.h"       // for SideBlock
-#include <Ioss_Assembly.h>        // for Assembly
-#include <Ioss_CodeTypes.h>       // for HAVE_MPI
-#include <Ioss_ElementTopology.h> // for NameList
-#include <Ioss_ParallelUtils.h>   // for ParallelUtils, etc
-#include <Ioss_Region.h>          // for Region
-#include <Ioss_SerializeIO.h>     // for SerializeIO
-#include <Ioss_StructuredBlock.h> // for StructuredBlock
+#include "Ioss_StructuredBlock.h" // for StructuredBlock
 
-#include <Ioss_Utils.h> // for Utils, IOSS_ERROR, etc
+#include "Ioss_Utils.h" // for Utils, IOSS_ERROR, etc
 #include <climits>
 #include <fmt/ostream.h>
 
@@ -54,7 +54,7 @@ namespace Iocatalyst {
 
     template <>
     Ioss::NodeBlock *createEntityGroup<Ioss::NodeBlock>(const conduit_cpp::Node &node,
-                                                        Ioss::DatabaseIO *       dbase)
+                                                        Ioss::DatabaseIO        *dbase)
     {
       const auto name = node.name();
       return new Ioss::NodeBlock(dbase, name, node["properties/entity_count/value"].as_int64(),
@@ -63,7 +63,7 @@ namespace Iocatalyst {
 
     template <>
     Ioss::ElementBlock *createEntityGroup<Ioss::ElementBlock>(const conduit_cpp::Node &node,
-                                                              Ioss::DatabaseIO *       dbase)
+                                                              Ioss::DatabaseIO        *dbase)
     {
       const auto name = node.name();
       return new Ioss::ElementBlock(dbase, name,
@@ -73,7 +73,7 @@ namespace Iocatalyst {
 
     template <>
     Ioss::NodeSet *createEntityGroup<Ioss::NodeSet>(const conduit_cpp::Node &node,
-                                                    Ioss::DatabaseIO *       dbase)
+                                                    Ioss::DatabaseIO        *dbase)
     {
       const auto name = node.name();
       return new Ioss::NodeSet(dbase, name, node["properties/entity_count/value"].as_int64());
@@ -81,7 +81,7 @@ namespace Iocatalyst {
 
     template <>
     Ioss::SideSet *createEntityGroup<Ioss::SideSet>(const conduit_cpp::Node &node,
-                                                    Ioss::DatabaseIO *       dbase)
+                                                    Ioss::DatabaseIO        *dbase)
     {
       const auto name = node.name();
       return new Ioss::SideSet(dbase, name);
@@ -156,7 +156,7 @@ namespace Iocatalyst {
 
     bool readTime(Ioss::Region *region)
     {
-      auto &     node = this->DBNode;
+      auto      &node = this->DBNode;
       const auto time = node["state_time"].as_float64();
       region->add_state(time);
       return true;
@@ -354,7 +354,7 @@ namespace Iocatalyst {
     bool readProperties(const conduit_cpp::Node &&parent, GroupingEntityT *block) const
     {
       for (conduit_index_t idx = 0, max = parent.number_of_children(); idx < max; ++idx) {
-        auto &&    child  = parent[idx];
+        auto     &&child  = parent[idx];
         const auto name   = child.name();
         const auto origin = static_cast<Ioss::Property::Origin>(child["origin"].as_int8());
         switch (child["type"].as_int8()) {
@@ -382,7 +382,7 @@ namespace Iocatalyst {
     bool readFields(const conduit_cpp::Node &&parent, GroupingEntityT *block) const
     {
       for (conduit_index_t idx = 0, max = parent.number_of_children(); idx < max; ++idx) {
-        auto &&    child   = parent[idx];
+        auto     &&child   = parent[idx];
         const auto name    = child.name();
         const auto type    = static_cast<Ioss::Field::BasicType>(child["type"].as_int8());
         const auto role    = static_cast<Ioss::Field::RoleType>(child["role"].as_int8());
@@ -476,13 +476,13 @@ namespace Iocatalyst {
     }
   }
 
-  bool DatabaseIO::begin__(Ioss::State state)
+  bool DatabaseIO::begin_nl(Ioss::State state)
   {
     this->dbState = state;
     return true;
   }
 
-  bool DatabaseIO::end__(Ioss::State state)
+  bool DatabaseIO::end_nl(Ioss::State state)
   {
     assert(this->dbState == state);
 
@@ -521,13 +521,12 @@ namespace Iocatalyst {
     return true;
   }
 
-  bool DatabaseIO::begin_state__(int state, double time) { return true; }
+  bool DatabaseIO::begin_state_nl(int state, double time) { return true; }
 
   // common
-  bool DatabaseIO::end_state__(int state, double time)
+  bool DatabaseIO::end_state_nl(int state, double time)
   {
-    if (this->is_input()) {
-    }
+    if (this->is_input()) {}
     else {
       // invoke catalyst.
       auto &impl = (*this->Impl.get());
@@ -553,7 +552,7 @@ namespace Iocatalyst {
            Ioss::SIDEBLOCK | Ioss::REGION;
   }
 
-  void DatabaseIO::read_meta_data__()
+  void DatabaseIO::read_meta_data_nl()
   {
     auto region = this->get_region();
     assert(region != nullptr);
@@ -562,7 +561,7 @@ namespace Iocatalyst {
     impl.readModel(region);
   }
 
-  void DatabaseIO::get_step_times__()
+  void DatabaseIO::get_step_times_nl()
   {
     auto region = this->get_region();
     assert(region != nullptr);

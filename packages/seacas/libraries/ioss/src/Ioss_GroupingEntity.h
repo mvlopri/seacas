@@ -8,15 +8,15 @@
 
 #include "ioss_export.h"
 
-#include <Ioss_CodeTypes.h>       // for Complex
-#include <Ioss_DatabaseIO.h>      // for DatabaseIO
-#include <Ioss_EntityType.h>      // for EntityType
-#include <Ioss_Field.h>           // for Field, Field::RoleType, etc
-#include <Ioss_FieldManager.h>    // for FieldManager, NameList
-#include <Ioss_Property.h>        // for Property
-#include <Ioss_PropertyManager.h> // for PropertyManager
-#include <Ioss_State.h>           // for State
-#include <Ioss_VariableType.h>    // for component_count()
+#include "Ioss_CodeTypes.h"       // for Complex
+#include "Ioss_DatabaseIO.h"      // for DatabaseIO
+#include "Ioss_EntityType.h"      // for EntityType
+#include "Ioss_Field.h"           // for Field, Field::RoleType, etc
+#include "Ioss_FieldManager.h"    // for FieldManager, NameList
+#include "Ioss_Property.h"        // for Property
+#include "Ioss_PropertyManager.h" // for PropertyManager
+#include "Ioss_State.h"           // for State
+#include "Ioss_VariableType.h"    // for component_count()
 #include <cstddef>                // for size_t, nullptr
 #include <cstdint>                // for int64_t
 #include <string>                 // for string
@@ -27,8 +27,6 @@
 #endif
 
 namespace Ioss {
-
-  class EntityBlock;
 
   /** \brief Base class for all 'grouping' entities.
    *  The following derived classes are typical:
@@ -50,7 +48,7 @@ namespace Ioss {
    *  A Region is also a grouping entity, except that its list of subentites
    *  are other GroupingEntities. That is, it maintains a list of NodeBlocks,
    *  ElementBlocks, NodeLists, CommLists and Surfaces. [Similar to the
-   *  "Composite Patter" in Design Patterns]  All interface to GroupingEntities
+   *  "Composite Pattern" in Design Patterns]  All interface to GroupingEntities
    *  is through the Region class; clients of the IO subsystem have no direct
    *  access to the underlying GroupingEntities (other than the Region).
    *
@@ -279,7 +277,7 @@ namespace Ioss {
     // private and provide friend...
     void really_delete_database();
 
-    // Handle implicit properties -- These are calcuated from data stored
+    // Handle implicit properties -- These are calculated from data stored
     // in the grouping entity instead of having an explicit value assigned.
     // An example would be 'element_block_count' for a region.
     // Note that even though this is a pure virtual function, an implementation
@@ -524,7 +522,7 @@ int64_t Ioss::GroupingEntity::get_field_data(const std::string &field_name,
   verify_field_exists(field_name, "input");
 
   Ioss::Field field = get_field(field_name);
-  field.check_type(Ioss::Field::get_field_type(T(0)));
+  field.check_type(Ioss::Field::get_field_type(static_cast<T>(0)));
 
   data.resize(field.raw_count() * field.raw_storage()->component_count());
   size_t data_size = data.size() * sizeof(T);
@@ -572,7 +570,7 @@ int64_t Ioss::GroupingEntity::put_field_data(const std::string &field_name,
   verify_field_exists(field_name, "output");
 
   Ioss::Field field = get_field(field_name);
-  field.check_type(Ioss::Field::get_field_type(T(0)));
+  field.check_type(Ioss::Field::get_field_type(static_cast<T>(0)));
   size_t data_size = data.size() * sizeof(T);
   T     *my_data   = const_cast<T *>(data.data());
   field.transform(my_data);

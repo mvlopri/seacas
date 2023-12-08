@@ -92,8 +92,6 @@ template void NemSpread<float, int>::read_restart_data();
 template void NemSpread<double, int64_t>::read_restart_data();
 template void NemSpread<float, int64_t>::read_restart_data();
 
-template <typename T, typename INT> void NemSpread<T, INT>::read_restart_data()
-
 /* Function which reads the restart variable data from the EXODUS II
  * database which contains the results information. Then distribute
  * it to the processors, and write it to the parallel exodus files.
@@ -110,7 +108,7 @@ template <typename T, typename INT> void NemSpread<T, INT>::read_restart_data()
  *
  *----------------------------------------------------------------------------
  */
-
+template <typename T, typename INT> void NemSpread<T, INT>::read_restart_data()
 {
   /* need to get the element block ids and counts */
   std::vector<INT> eb_ids_global(globals.Num_Elem_Blk);
@@ -632,34 +630,22 @@ int NemSpread<T, INT>::read_vars(int exoid, int index, INT *eb_ids, INT *eb_cnts
 
   if (Restart_Info.NVar_Elem > 0) {
     fmt::print("Reading {} element variables...\n", Restart_Info.NVar_Elem);
-    if (read_elem_vars(exoid, index, eb_ids, eb_cnts, eb_map_ptr, eb_cnts_local) < 0) {
-      fmt::print(stderr, "{}: Error distributing elemental variables.\n", __func__);
-      return -1;
-    }
+    read_elem_vars(exoid, index, eb_ids, eb_cnts, eb_map_ptr, eb_cnts_local);
   }
 
   if (Restart_Info.NVar_Node > 0) {
     fmt::print("Reading {} nodal variables...\n", Restart_Info.NVar_Node);
-    if (read_nodal_vars(exoid, index) < 0) {
-      fmt::print(stderr, "{}: Error distributing nodal variables.\n", __func__);
-      return -1;
-    }
+    read_nodal_vars(exoid, index);
   }
 
   if (Restart_Info.NVar_Sset > 0) {
     fmt::print("Reading {} sideset variables...\n", Restart_Info.NVar_Sset);
-    if (read_sset_vars(exoid, index, ss_ids, ss_cnts) < 0) {
-      fmt::print(stderr, "{}: Error distributing sideset variables.\n", __func__);
-      return -1;
-    }
+    read_sset_vars(exoid, index, ss_ids, ss_cnts);
   }
 
   if (Restart_Info.NVar_Nset > 0) {
     fmt::print("Reading {} nodeset variables...\n", Restart_Info.NVar_Nset);
-    if (read_nset_vars(exoid, index, ns_ids, ns_cnts) < 0) {
-      fmt::print(stderr, "{}: Error distributing nodeset variables.\n", __func__);
-      return -1;
-    }
+    read_nset_vars(exoid, index, ns_ids, ns_cnts);
   }
 
   return 0;

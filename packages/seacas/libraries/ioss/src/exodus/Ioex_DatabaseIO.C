@@ -4,53 +4,44 @@
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_CodeTypes.h>
-#include <Ioss_FileInfo.h>
-#include <Ioss_ParallelUtils.h>
-#include <Ioss_SerializeIO.h>
-#include <Ioss_SmartAssert.h>
-#include <Ioss_SurfaceSplit.h>
-#include <Ioss_Utils.h>
-#include <algorithm>
+#include "Ioss_CodeTypes.h"
+#include "Ioss_FileInfo.h"
+#include "Ioss_ParallelUtils.h"
+#include "Ioss_SerializeIO.h"
+#include "Ioss_SmartAssert.h"
+#include "Ioss_SurfaceSplit.h"
+#include "Ioss_Utils.h"
+#include "exodus/Ioex_DatabaseIO.h"
+#include "exodus/Ioex_Internals.h"
+#include "exodus/Ioex_Utils.h"
+#include <array>
 #include <cassert>
-#include <cctype>
 #include <cfloat>
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <exodus/Ioex_DatabaseIO.h>
-#include <exodus/Ioex_Internals.h>
-#include <exodus/Ioex_Utils.h>
 #include <exodusII.h>
+#include <fmt/format.h>
 #include <fmt/ostream.h>
-#include <functional>
-#include <iostream>
 #include <limits>
 #include <map>
+#include <netcdf_meta.h>
 #include <numeric>
-#include <set>
+#include <sstream>
+#include <stdexcept>
 #include <string>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <tokenize.h>
-#ifndef _MSC_VER
-#include <unistd.h>
-#endif
-#include <utility>
 #include <vector>
 
+#include "Ioex_BaseDatabaseIO.h"
 #include "Ioss_Assembly.h"
 #include "Ioss_Blob.h"
 #include "Ioss_CommSet.h"
-#include "Ioss_CoordinateFrame.h"
 #include "Ioss_DBUsage.h"
-#include "Ioss_DatabaseIO.h"
 #include "Ioss_EdgeBlock.h"
 #include "Ioss_EdgeSet.h"
 #include "Ioss_ElementBlock.h"
 #include "Ioss_ElementSet.h"
+#include "Ioss_ElementTopology.h"
 #include "Ioss_EntityBlock.h"
 #include "Ioss_EntitySet.h"
 #include "Ioss_EntityType.h"
@@ -62,11 +53,13 @@
 #include "Ioss_NodeBlock.h"
 #include "Ioss_NodeSet.h"
 #include "Ioss_Property.h"
+#include "Ioss_PropertyManager.h"
 #include "Ioss_Region.h"
 #include "Ioss_SideBlock.h"
 #include "Ioss_SideSet.h"
 #include "Ioss_State.h"
 #include "Ioss_VariableType.h"
+#include "hopscotch_hash.h"
 
 // ========================================================================
 // Static internal helper functions
@@ -443,7 +436,7 @@ namespace Ioex {
     return Ioex::BaseDatabaseIO::get_file_pointer();
   }
 
-  void DatabaseIO::read_meta_data__()
+  void DatabaseIO::read_meta_data_nl()
   {
     // If this is a HISTORY file, there isn't really any metadata
     // Other than a single node and single element.  Just hardwire
@@ -460,7 +453,7 @@ namespace Ioex {
         eb->property_add(Ioss::Property("id", 1));
         eb->property_add(Ioss::Property("guid", util().generate_guid(1)));
         get_region()->add(eb);
-        get_step_times__();
+        get_step_times_nl();
         add_region_fields();
       }
       return;
@@ -474,12 +467,12 @@ namespace Ioex {
     // anything since it is already there.  We do need the number of
     // steps though...
     if (open_create_behavior() == Ioss::DB_APPEND || dbUsage == Ioss::QUERY_TIMESTEPS_ONLY) {
-      get_step_times__();
+      get_step_times_nl();
       return;
     }
 
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       if (isParallel) {
         Ioex::check_processor_info(decoded_filename(), get_file_pointer(), util().parallel_size(),
@@ -490,7 +483,7 @@ namespace Ioex {
       read_communication_metadata();
     }
 
-    get_step_times__();
+    get_step_times_nl();
 
     get_nodeblocks();
     get_edgeblocks();
@@ -608,7 +601,7 @@ namespace Ioex {
         char *qa_record[1][4];
       };
 
-      auto qa = new qa_element[num_qa];
+      std::vector<qa_element> qa(num_qa);
       for (int i = 0; i < num_qa; i++) {
         for (int j = 0; j < 4; j++) {
           qa[i].qa_record[0][j] = new char[MAX_STR_LENGTH + 1];
@@ -625,7 +618,6 @@ namespace Ioex {
           delete[] qa[i].qa_record[0][j];
         }
       }
-      delete[] qa;
     }
 
     // Get information records from database and add to informationRecords...
@@ -641,7 +633,7 @@ namespace Ioex {
     }
   }
 
-  void DatabaseIO::get_step_times__()
+  void DatabaseIO::get_step_times_nl()
   {
     bool                exists         = false;
     double              last_time      = DBL_MAX;
@@ -676,14 +668,14 @@ namespace Ioex {
         Ioss::Region *this_region = get_region();
         for (int i = 0; i < max_step; i++) {
           if (tsteps[i] <= max_time) {
-            this_region->add_state__(tsteps[i] * timeScaleFactor);
+            this_region->add_state_nl(tsteps[i] * timeScaleFactor);
           }
         }
       }
     }
     else {
       {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeIO_(this);
         timestep_count = ex_inquire_int(get_file_pointer(), EX_INQ_TIME);
         if (timestep_count <= 0) {
           return;
@@ -747,7 +739,7 @@ namespace Ioex {
       Ioss::Region *this_region = get_region();
       for (int i = 0; i < max_step; i++) {
         if (tsteps[i] <= last_time) {
-          this_region->add_state__(tsteps[i] * timeScaleFactor);
+          this_region->add_state_nl(tsteps[i] * timeScaleFactor);
         }
         else {
           if (myProcessor == 0 && max_time == std::numeric_limits<double>::max()) {
@@ -843,10 +835,10 @@ namespace Ioex {
     if (nemesis_file) {
       // A nemesis file typically separates nodes into multiple
       // communication sets by processor.  (each set specifies
-      // nodes/elements that communicate with only a single processor).
-      // For Sierra, we want a single node commun. map and a single
-      // element commun. map specifying all communications so we combine
-      // all sets into a single set.
+      // nodes/elements that communicate with only a single
+      // processor).  For Sierra, we want a single node communication
+      // map and a single element communication map specifying all
+      // communications so we combine all sets into a single set.
 
       if (int_byte_size_api() == 4) {
         int gn, ge, geb, gns, gss;
@@ -968,7 +960,7 @@ namespace Ioex {
 
       if (is_input() || open_create_behavior() == Ioss::DB_APPEND) {
 
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeIO_(this);
         // Check whether there is a "original_global_id_map" map on
         // the database. If so, use it instead of the "node_num_map".
         bool map_read  = false;
@@ -1082,7 +1074,7 @@ namespace Ioex {
 
     int error;
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       if ((ex_int64_status(get_file_pointer()) & EX_IDS_INT64_API) != 0) {
         error = ex_get_ids(get_file_pointer(), entity_type, X_block_ids.data());
@@ -1108,7 +1100,7 @@ namespace Ioex {
     int               iblk;
 
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       for (iblk = 0; iblk < m_groupCount[entity_type]; iblk++) {
         int     index = 4 * iblk;
@@ -1181,7 +1173,7 @@ namespace Ioex {
         block_name = alias;
       }
       else {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeio_(this);
         block_name = Ioex::get_entity_name(get_file_pointer(), entity_type, id, basename,
                                            maximumNameLength, db_has_name);
       }
@@ -1296,7 +1288,7 @@ namespace Ioex {
       add_mesh_reduction_fields(id, block);
 
       if (entity_type == EX_ELEM_BLOCK) {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeio_(this);
         if (nmap > 0) {
           auto *elb = dynamic_cast<Ioss::ElementBlock *>(block);
           Ioss::Utils::check_dynamic_cast(elb);
@@ -1451,7 +1443,7 @@ namespace Ioex {
 
       Ioss::Int64Vector side_set_ids(m_groupCount[EX_SIDE_SET]);
       {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeio_(this);
         int               error;
         if ((ex_int64_status(get_file_pointer()) & EX_IDS_INT64_API) != 0) {
           error = ex_get_ids(get_file_pointer(), EX_SIDE_SET, side_set_ids.data());
@@ -1507,7 +1499,7 @@ namespace Ioex {
 
         bool db_has_name = false;
         {
-          Ioss::SerializeIO serializeIO__(this);
+          Ioss::SerializeIO serializeio_(this);
 
           std::string alias = Ioss::Utils::encode_entity_name("surface", id);
           if (ignore_database_names()) {
@@ -1840,7 +1832,7 @@ namespace Ioex {
 
               int num_attr = 0;
               {
-                Ioss::SerializeIO serializeIO__(this);
+                Ioss::SerializeIO serializeio_(this);
                 int ierr = ex_get_attr_param(get_file_pointer(), EX_SIDE_SET, 1, &num_attr);
                 if (ierr < 0) {
                   Ioex::exodus_error(get_file_pointer(), __LINE__, __func__, __FILE__);
@@ -1878,7 +1870,7 @@ namespace Ioex {
       Ioss::IntVector   attributes(count);
       std::vector<T *>  Xsets(count);
       {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeio_(this);
         if (ex_int64_status(get_file_pointer()) & EX_IDS_INT64_API) {
           int error = ex_get_ids(get_file_pointer(), type, Xset_ids.data());
           if (error < 0) {
@@ -2024,7 +2016,7 @@ namespace Ioex {
     // nodesets, just return an empty container.
 
     if (isParallel || isSerialParallel) {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
       // This is a parallel run. There should be communications data
       // Get nemesis commset metadata
       int64_t my_node_count = 0;
@@ -2097,7 +2089,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2292,7 +2284,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2341,7 +2333,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2390,7 +2382,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2565,7 +2557,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2644,7 +2636,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2715,7 +2707,7 @@ namespace Ioex {
   {
     {
       int               ierr;
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2816,7 +2808,7 @@ namespace Ioex {
     size_t db_size = ns->get_property("filtered_db_set_size").get_int();
 
     int               ierr;
-    Ioss::SerializeIO serializeIO__(this);
+    Ioss::SerializeIO serializeio_(this);
 
     size_t num_to_get = field.verify(data_size);
     if (num_to_get > 0) {
@@ -2933,7 +2925,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
 
@@ -2966,8 +2958,8 @@ namespace Ioex {
             // Convert local node id to global node id and store in 'data'
             if (int_byte_size_api() == 4) {
               int *entity_proc = static_cast<int *>(data);
-              int *ents        = reinterpret_cast<int *>(&entities[0]);
-              int *pros        = reinterpret_cast<int *>(&procs[0]);
+              int *ents        = reinterpret_cast<int *>(entities.data());
+              int *pros        = reinterpret_cast<int *>(procs.data());
 
               size_t j = 0;
               if (field.get_name() == "entity_processor") {
@@ -2988,8 +2980,8 @@ namespace Ioex {
             }
             else {
               auto *entity_proc = static_cast<int64_t *>(data);
-              auto *ents        = reinterpret_cast<int64_t *>(&entities[0]);
-              auto *pros        = reinterpret_cast<int64_t *>(&procs[0]);
+              auto *ents        = reinterpret_cast<int64_t *>(entities.data());
+              auto *pros        = reinterpret_cast<int64_t *>(procs.data());
 
               size_t j = 0;
               if (field.get_name() == "entity_processor") {
@@ -3024,9 +3016,9 @@ namespace Ioex {
 
             if (int_byte_size_api() == 4) {
               int *entity_proc = static_cast<int *>(data);
-              int *ents        = reinterpret_cast<int *>(&entities[0]);
-              int *pros        = reinterpret_cast<int *>(&procs[0]);
-              int *sids        = reinterpret_cast<int *>(&sides[0]);
+              int *ents        = reinterpret_cast<int *>(entities.data());
+              int *pros        = reinterpret_cast<int *>(procs.data());
+              int *sids        = reinterpret_cast<int *>(sides.data());
 
               size_t j = 0;
               if (field.get_name() == "entity_processor") {
@@ -3048,9 +3040,9 @@ namespace Ioex {
             }
             else {
               auto *entity_proc = static_cast<int64_t *>(data);
-              auto *ents        = reinterpret_cast<int64_t *>(&entities[0]);
-              auto *pros        = reinterpret_cast<int64_t *>(&procs[0]);
-              auto *sids        = reinterpret_cast<int64_t *>(&sides[0]);
+              auto *ents        = reinterpret_cast<int64_t *>(entities.data());
+              auto *pros        = reinterpret_cast<int64_t *>(procs.data());
+              auto *sids        = reinterpret_cast<int64_t *>(sides.data());
 
               size_t j = 0;
               if (field.get_name() == "entity_processor") {
@@ -3091,7 +3083,7 @@ namespace Ioex {
   int64_t DatabaseIO::get_field_internal(const Ioss::SideBlock *fb, const Ioss::Field &field,
                                          void *data, size_t data_size) const
   {
-    Ioss::SerializeIO serializeIO__(this);
+    Ioss::SerializeIO serializeio_(this);
     int64_t           num_to_get = field.verify(data_size);
     if (num_to_get > 0) {
 
@@ -4041,7 +4033,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -4155,7 +4147,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -4211,7 +4203,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -4267,7 +4259,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
 
@@ -4388,7 +4380,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
 
@@ -4462,7 +4454,7 @@ namespace Ioex {
                                          void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
 
       size_t num_to_get = field.verify(data_size);
 
@@ -4837,7 +4829,7 @@ namespace Ioex {
                                               void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
       //    ex_update(get_file_pointer());
 
       size_t entity_count = ns->entity_count();
@@ -4947,12 +4939,12 @@ namespace Ioex {
       std::vector<char> procs(entity_count * int_byte_size_api());
 
       if (type == "node") {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeio_(this);
         // Convert global node id to local node id and store in 'entities'
         if (int_byte_size_api() == 4) {
           int *entity_proc = static_cast<int *>(data);
-          int *ent         = reinterpret_cast<int *>(&entities[0]);
-          int *pro         = reinterpret_cast<int *>(&procs[0]);
+          int *ent         = reinterpret_cast<int *>(entities.data());
+          int *pro         = reinterpret_cast<int *>(procs.data());
           int  j           = 0;
           for (size_t i = 0; i < entity_count; i++) {
             int global_id = entity_proc[j++];
@@ -4962,8 +4954,8 @@ namespace Ioex {
         }
         else {
           auto   *entity_proc = static_cast<int64_t *>(data);
-          auto   *ent         = reinterpret_cast<int64_t *>(&entities[0]);
-          auto   *pro         = reinterpret_cast<int64_t *>(&procs[0]);
+          auto   *ent         = reinterpret_cast<int64_t *>(entities.data());
+          auto   *pro         = reinterpret_cast<int64_t *>(procs.data());
           int64_t j           = 0;
           for (size_t i = 0; i < entity_count; i++) {
             int64_t global_id = entity_proc[j++];
@@ -4998,13 +4990,13 @@ namespace Ioex {
 
           std::vector<char> internal(nodeCount * int_byte_size_api());
           if (int_byte_size_api() == 4) {
-            compute_internal_border_maps(reinterpret_cast<int *>(&entities[0]),
-                                         reinterpret_cast<int *>(&internal[0]), nodeCount,
+            compute_internal_border_maps(reinterpret_cast<int *>(entities.data()),
+                                         reinterpret_cast<int *>(internal.data()), nodeCount,
                                          entity_count);
           }
           else {
-            compute_internal_border_maps(reinterpret_cast<int64_t *>(&entities[0]),
-                                         reinterpret_cast<int64_t *>(&internal[0]), nodeCount,
+            compute_internal_border_maps(reinterpret_cast<int64_t *>(entities.data()),
+                                         reinterpret_cast<int64_t *>(internal.data()), nodeCount,
                                          entity_count);
           }
 
@@ -5016,13 +5008,13 @@ namespace Ioex {
         }
       }
       else if (type == "side") {
-        Ioss::SerializeIO serializeIO__(this);
+        Ioss::SerializeIO serializeio_(this);
         std::vector<char> sides(entity_count * int_byte_size_api());
         if (int_byte_size_api() == 4) {
           int *entity_proc = static_cast<int *>(data);
-          int *ent         = reinterpret_cast<int *>(&entities[0]);
-          int *sid         = reinterpret_cast<int *>(&sides[0]);
-          int *pro         = reinterpret_cast<int *>(&procs[0]);
+          int *ent         = reinterpret_cast<int *>(entities.data());
+          int *sid         = reinterpret_cast<int *>(sides.data());
+          int *pro         = reinterpret_cast<int *>(procs.data());
           int  j           = 0;
           for (size_t i = 0; i < entity_count; i++) {
             ent[i] = elemMap.global_to_local(entity_proc[j++]);
@@ -5032,9 +5024,9 @@ namespace Ioex {
         }
         else {
           auto   *entity_proc = static_cast<int64_t *>(data);
-          auto   *ent         = reinterpret_cast<int64_t *>(&entities[0]);
-          auto   *sid         = reinterpret_cast<int64_t *>(&sides[0]);
-          auto   *pro         = reinterpret_cast<int64_t *>(&procs[0]);
+          auto   *ent         = reinterpret_cast<int64_t *>(entities.data());
+          auto   *sid         = reinterpret_cast<int64_t *>(sides.data());
+          auto   *pro         = reinterpret_cast<int64_t *>(procs.data());
           int64_t j           = 0;
           for (size_t i = 0; i < entity_count; i++) {
             ent[i] = elemMap.global_to_local(entity_proc[j++]);
@@ -5056,13 +5048,13 @@ namespace Ioex {
         // Iterate through array again and consolidate all '1's
         std::vector<char> internal(elementCount * int_byte_size_api());
         if (int_byte_size_api() == 4) {
-          compute_internal_border_maps(reinterpret_cast<int *>(&entities[0]),
-                                       reinterpret_cast<int *>(&internal[0]), elementCount,
+          compute_internal_border_maps(reinterpret_cast<int *>(entities.data()),
+                                       reinterpret_cast<int *>(internal.data()), elementCount,
                                        entity_count);
         }
         else {
-          compute_internal_border_maps(reinterpret_cast<int64_t *>(&entities[0]),
-                                       reinterpret_cast<int64_t *>(&internal[0]), elementCount,
+          compute_internal_border_maps(reinterpret_cast<int64_t *>(entities.data()),
+                                       reinterpret_cast<int64_t *>(internal.data()), elementCount,
                                        entity_count);
         }
 
@@ -5103,7 +5095,7 @@ namespace Ioex {
   int64_t DatabaseIO::put_field_internal(const Ioss::SideBlock *fb, const Ioss::Field &field,
                                          void *data, size_t data_size) const
   {
-    Ioss::SerializeIO serializeIO__(this);
+    Ioss::SerializeIO serializeio_(this);
     size_t            num_to_get = field.verify(data_size);
     if (num_to_get > 0) {
 
@@ -5359,7 +5351,7 @@ namespace Ioex {
         mesh.full_nemesis_data = false;
       }
 
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeio_(this);
       mesh.populate(region);
       gather_communication_metadata(&mesh.comm);
 

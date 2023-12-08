@@ -11,8 +11,8 @@
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_CodeTypes.h>
-#include <exodus/Ioex_ParallelDatabaseIO.h>
+#include "Ioss_CodeTypes.h"
+#include "exodus/Ioex_ParallelDatabaseIO.h"
 #if defined PARALLEL_AWARE_EXODUS
 #include <algorithm>
 #include <cassert>
@@ -37,44 +37,44 @@
 #include <utility>
 #include <vector>
 
-#include <exodus/Ioex_DecompositionData.h>
-#include <exodus/Ioex_Internals.h>
-#include <exodus/Ioex_Utils.h>
+#include "exodus/Ioex_DecompositionData.h"
+#include "exodus/Ioex_Internals.h"
+#include "exodus/Ioex_Utils.h"
 #include <exodusII.h>
 
-#include <Ioss_Assembly.h>
-#include <Ioss_Blob.h>
-#include <Ioss_CommSet.h>
-#include <Ioss_CoordinateFrame.h>
-#include <Ioss_DBUsage.h>
-#include <Ioss_DatabaseIO.h>
-#include <Ioss_EdgeBlock.h>
-#include <Ioss_EdgeSet.h>
-#include <Ioss_ElementBlock.h>
-#include <Ioss_ElementSet.h>
-#include <Ioss_ElementTopology.h>
-#include <Ioss_EntityBlock.h>
-#include <Ioss_EntitySet.h>
-#include <Ioss_EntityType.h>
-#include <Ioss_FaceBlock.h>
-#include <Ioss_FaceSet.h>
-#include <Ioss_Field.h>
-#include <Ioss_FileInfo.h>
-#include <Ioss_GroupingEntity.h>
-#include <Ioss_Map.h>
-#include <Ioss_NodeBlock.h>
-#include <Ioss_NodeSet.h>
-#include <Ioss_ParallelUtils.h>
-#include <Ioss_Property.h>
-#include <Ioss_Region.h>
-#include <Ioss_SideBlock.h>
-#include <Ioss_SideSet.h>
-#include <Ioss_State.h>
-#include <Ioss_SurfaceSplit.h>
-#include <Ioss_Utils.h>
-#include <Ioss_VariableType.h>
+#include "Ioss_Assembly.h"
+#include "Ioss_Blob.h"
+#include "Ioss_CommSet.h"
+#include "Ioss_CoordinateFrame.h"
+#include "Ioss_DBUsage.h"
+#include "Ioss_DatabaseIO.h"
+#include "Ioss_EdgeBlock.h"
+#include "Ioss_EdgeSet.h"
+#include "Ioss_ElementBlock.h"
+#include "Ioss_ElementSet.h"
+#include "Ioss_ElementTopology.h"
+#include "Ioss_EntityBlock.h"
+#include "Ioss_EntitySet.h"
+#include "Ioss_EntityType.h"
+#include "Ioss_FaceBlock.h"
+#include "Ioss_FaceSet.h"
+#include "Ioss_Field.h"
+#include "Ioss_FileInfo.h"
+#include "Ioss_GroupingEntity.h"
+#include "Ioss_Map.h"
+#include "Ioss_NodeBlock.h"
+#include "Ioss_NodeSet.h"
+#include "Ioss_ParallelUtils.h"
+#include "Ioss_Property.h"
+#include "Ioss_Region.h"
+#include "Ioss_SideBlock.h"
+#include "Ioss_SideSet.h"
+#include "Ioss_State.h"
+#include "Ioss_SurfaceSplit.h"
+#include "Ioss_Utils.h"
+#include "Ioss_VariableType.h"
 
-#include <Ioss_FileInfo.h>
+#include "Ioss_FileInfo.h"
 #undef MPICPP
 
 // ========================================================================
@@ -309,17 +309,31 @@ namespace {
   }
 
   template <typename T>
-  std::vector<int> get_all_block_field_component_count(const std::string& field_name, const std::vector<T*>& entity_container)
+  std::vector<int64_t> get_block_to_decomp_map(const std::vector<T *> &entity_container)
+  {
+    std::vector<int64_t> block_to_decomp(entity_container.size(), 0);
+
+    for (size_t i = 0; i < entity_container.size(); ++i) {
+      T *entity          = entity_container[i];
+      block_to_decomp[i] = entity->get_property("iblk").get_int();
+    }
+
+    return block_to_decomp;
+  }
+
+  template <typename T>
+  std::vector<int> get_entity_field_component_count(const std::string      &field_name,
+                                                    const std::vector<T *> &entity_container)
   {
     size_t num_blocks = entity_container.size();
 
     std::vector<int> block_field_component_count(num_blocks, 0);
 
-    for(T *entity : entity_container) {
-      if(entity->field_exists(field_name)) {
-        int iblk = entity->get_property("iblk").get_int();
-        Ioss::Field field = entity->get_field(field_name);
-        block_field_component_count[iblk] = field.raw_storage()->component_count();
+    for (size_t i = 0; i < num_blocks; ++i) {
+      T *entity = entity_container[i];
+      if (entity->field_exists(field_name)) {
+        Ioss::Field field              = entity->get_field(field_name);
+        block_field_component_count[i] = field.raw_storage()->component_count();
       }
     }
 
@@ -327,16 +341,15 @@ namespace {
   }
 
   template <typename T>
-  size_t get_all_block_field_data_size(const std::string& field_name, const std::vector<T*>& entity_container)
+  size_t get_entity_field_data_size(const std::string      &field_name,
+                                    const std::vector<T *> &entity_container)
   {
-    size_t num_blocks = entity_container.size();
-
     size_t total_data_size = 0;
-
-    for(T *entity : entity_container) {
-      if(entity->field_exists(field_name)) {
+    for (T *entity : entity_container) {
+      if (entity->field_exists(field_name)) {
         Ioss::Field field = entity->get_field(field_name);
-        total_data_size += entity->entity_count()*field.raw_storage()->component_count()*field.get_basic_size();
+        total_data_size += entity->entity_count() * field.raw_storage()->component_count() *
+                           field.get_basic_size();
       }
     }
 
@@ -382,7 +395,7 @@ namespace Ioex {
 
   ParallelDatabaseIO::~ParallelDatabaseIO() = default;
 
-  void ParallelDatabaseIO::release_memory__()
+  void ParallelDatabaseIO::release_memory_nl()
   {
     free_file_pointer();
     nodeMap.release_memory();
@@ -599,7 +612,7 @@ namespace Ioex {
 
     MPI_Info info        = MPI_INFO_NULL;
     int      app_opt_val = ex_opts(EX_VERBOSE);
-    Ioss::DatabaseIO::openDatabase__();
+    Ioss::DatabaseIO::openDatabase_nl();
 
     std::string filename = get_dw_name();
 
@@ -742,7 +755,7 @@ namespace Ioex {
     return Ioex::BaseDatabaseIO::free_file_pointer();
   }
 
-  void ParallelDatabaseIO::read_meta_data__()
+  void ParallelDatabaseIO::read_meta_data_nl()
   {
     int exoid = get_file_pointer(); // get_file_pointer() must be called first.
 
@@ -755,7 +768,7 @@ namespace Ioex {
     // we don't write anything since it is already there.  We do
     // need the number of steps though...
     if (open_create_behavior() == Ioss::DB_APPEND || dbUsage == Ioss::QUERY_TIMESTEPS_ONLY) {
-      get_step_times__();
+      get_step_times_nl();
       return;
     }
 
@@ -771,7 +784,7 @@ namespace Ioex {
     read_region();
     get_elemblocks();
 
-    get_step_times__();
+    get_step_times_nl();
 
     get_nodeblocks();
     get_edgeblocks();
@@ -858,7 +871,7 @@ namespace Ioex {
         char *qa_record[1][4];
       };
 
-      auto qa = new qa_element[num_qa];
+      std::vector<qa_element> qa(num_qa);
       for (int i = 0; i < num_qa; i++) {
         for (int j = 0; j < 4; j++) {
           qa[i].qa_record[0][j] = new char[MAX_STR_LENGTH + 1];
@@ -875,7 +888,6 @@ namespace Ioex {
           delete[] qa[i].qa_record[0][j];
         }
       }
-      delete[] qa;
     }
 
     // Get information records from database and add to informationRecords...
@@ -891,7 +903,7 @@ namespace Ioex {
     }
   }
 
-  void ParallelDatabaseIO::get_step_times__()
+  void ParallelDatabaseIO::get_step_times_nl()
   {
     double              last_time      = DBL_MAX;
     int                 timestep_count = 0;
@@ -1373,7 +1385,7 @@ namespace Ioex {
                                  Ioss::Int64Vector &element, Ioss::Int64Vector &sides)
     {
       // Check whether we already populated the element/sides vectors.
-      if (element.empty() && sides.empty() && number_sides > 0) {
+      if (element.empty() && sides.empty()) {
         element.resize(number_sides);
         sides.resize(number_sides);
 
@@ -1535,6 +1547,12 @@ namespace Ioex {
             Ioex::filter_element_list(get_region(), element, sides, true);
             number_sides = element.size();
             assert(element.size() == sides.size());
+
+            // Determine if there are any sides left on the sideset after filtering...
+            int64_t global_sides = util().global_minmax(number_sides, Ioss::ParallelUtils::DO_SUM);
+            if (global_sides == 0) {
+              continue;
+            }
           }
 
           if (split_type == Ioss::SPLIT_BY_TOPOLOGIES && sideTopology.size() == 1) {
@@ -2034,7 +2052,7 @@ namespace Ioex {
                                                  void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -2084,7 +2102,7 @@ namespace Ioex {
                                                  size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -3717,7 +3735,7 @@ namespace Ioex {
                                                  void *data, size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -3774,7 +3792,7 @@ namespace Ioex {
                                                  size_t data_size) const
   {
     {
-      Ioss::SerializeIO serializeIO__(this);
+      Ioss::SerializeIO serializeIO_(this);
 
       size_t num_to_get = field.verify(data_size);
       if (num_to_get > 0) {
@@ -4962,149 +4980,183 @@ namespace Ioex {
     }
   }
 
-std::vector<size_t> ParallelDatabaseIO::get_all_block_connectivity(const std::string &field_name, void *data, size_t data_size) const
-{
-  size_t num_to_get = decomp->get_all_block_connectivity_size();
-  size_t expected_data_size = num_to_get * decomp->int_size();
+  std::vector<size_t> ParallelDatabaseIO::get_entity_connectivity_field_data(
+      const std::string &field_name, const std::vector<Ioss::ElementBlock *> &elem_blocks,
+      void *data, size_t data_size) const
+  {
+    std::vector<int64_t> block_to_decomp = get_block_to_decomp_map(elem_blocks);
 
-  if (data_size < expected_data_size) {
-    std::ostringstream errmsg;
-    fmt::print(errmsg, "ERROR: Connectivity data size {} on region {} is less than expected size {}\n\n", data_size,
-               get_region()->name(), expected_data_size);
-    IOSS_ERROR(errmsg);
+    ElementBlockBatchReader batchReader(decomp.get());
+
+    size_t num_to_get         = batchReader.get_connectivity_size(block_to_decomp);
+    size_t expected_data_size = num_to_get * decomp->int_size();
+
+    if (data_size < expected_data_size) {
+      std::ostringstream errmsg;
+      fmt::print(errmsg,
+                 "ERROR: Connectivity data size {} on region {} is less than expected size {}\n\n",
+                 data_size, get_region()->name(), expected_data_size);
+      IOSS_ERROR(errmsg);
+    }
+
+    std::vector<size_t> offsets =
+        batchReader.get_connectivity(get_file_pointer(), block_to_decomp, data);
+
+    if (field_name == "connectivity") {
+      Ioss::Field::BasicType type =
+          decomp->int_size() == sizeof(int) ? Ioss::Field::INTEGER : Ioss::Field::INT64;
+      get_map(EX_NODE_BLOCK).map_data(data, type, num_to_get);
+    }
+
+    return offsets;
   }
 
-  std::vector<size_t> offsets = decomp->get_all_block_connectivity(get_file_pointer(), data);
+  template <typename T>
+  std::vector<Ioex::BlockFieldData>
+  ParallelDatabaseIO::get_entity_block_field_data(const Ioex::VariableNameMap &variables,
+                                                  const std::string           &field_name,
+                                                  const std::vector<T *> &entity_container) const
+  {
+    size_t num_blocks = entity_container.size();
 
-  if(field_name == "connectivity") {
-    Ioss::Field::BasicType type = decomp->int_size() == sizeof(int) ? Ioss::Field::INTEGER : Ioss::Field::INT64;
-    get_map(EX_NODE_BLOCK).map_data(data, type, num_to_get);
-  }
+    std::vector<Ioex::BlockFieldData> block_data(num_blocks);
 
-  return offsets;
-}
+    for (size_t iblk = 0; iblk < num_blocks; ++iblk) {
+      T *entity           = entity_container[iblk];
+      block_data[iblk].id = Ioex::get_id(entity, &ids_);
 
-std::vector<size_t> ParallelDatabaseIO::get_all_block_transient_field_data(const Ioex::VariableNameMap &variables,
-                                                                          const std::string &field_name, void *data) const
-{
-  const Ioss::ElementBlockContainer& elem_blocks = get_region()->get_element_blocks();
-  std::vector<int> block_field_component_count = get_all_block_field_component_count(field_name, elem_blocks);
-  std::vector<size_t> ioss_offset = decomp->get_all_block_offset(block_field_component_count);
+      if (entity->field_exists(field_name)) {
+        Ioss::Field field = entity->get_field(field_name);
 
-  size_t num_blocks = elem_blocks.size();
+        size_t comp_count           = field.get_component_count(Ioss::Field::InOut::INPUT);
+        block_data[iblk].comp_count = comp_count;
 
-  std::vector<BlockFieldData> block_data(num_blocks);
+        for (size_t j = 0; j < comp_count; j++) {
+          std::string var_name = get_component_name(field, Ioss::Field::InOut::INPUT, j + 1);
+          if (lowerCaseVariableNames) {
+            Ioss::Utils::fixup_name(var_name);
+          }
 
-  for(size_t i=0; i<num_blocks; i++) {
-    Ioss::ElementBlock *entity = elem_blocks[i];
-    int iblk = entity->get_property("iblk").get_int();
-    block_data[iblk].id = Ioex::get_id(entity, &ids_);
+          auto var_iter = variables.find(var_name);
+          if (var_iter == variables.end()) {
+            std::ostringstream errmsg;
+            fmt::print(errmsg, "ERROR: Could not find field '{}' on block '{}'\n", var_name,
+                       entity->name());
+            IOSS_ERROR(errmsg);
+          }
+          size_t var_index = var_iter->second;
+          assert(var_index > 0);
 
-    if(entity->field_exists(field_name)) {
-      Ioss::Field field = entity->get_field(field_name);
-
-      size_t comp_count = field.get_component_count(Ioss::Field::InOut::INPUT);
-      block_data[iblk].comp_count = comp_count;
-
-      for (size_t j = 0; j < comp_count; j++) {
-         std::string var_name = get_component_name(field, Ioss::Field::InOut::INPUT, j + 1);
-         if (lowerCaseVariableNames) {
-           Ioss::Utils::fixup_name(var_name);
-         }
-
-         auto var_iter = variables.find(var_name);
-         if (var_iter == variables.end()) {
-           std::ostringstream errmsg;
-           fmt::print(errmsg, "ERROR: Could not find field '{}' on block '{}'\n", var_name,entity->name());
-           IOSS_ERROR(errmsg);
-         }
-         size_t var_index = var_iter->second;
-         assert(var_index > 0);
-
-         block_data[iblk].var_name.push_back(var_name);
-         block_data[iblk].var_index.push_back(var_index);
+          block_data[iblk].var_name.push_back(var_name);
+          block_data[iblk].var_index.push_back(var_index);
+        }
       }
     }
+
+    return block_data;
   }
 
-  std::vector<double> temp(ioss_offset[num_blocks]);
-  decomp->get_all_block_field(get_file_pointer(), temp.data(), get_current_state(), block_data);
+  std::vector<size_t> ParallelDatabaseIO::get_entity_transient_field_data(
+      const Ioex::VariableNameMap &variables, const std::string &field_name,
+      const std::vector<Ioss::ElementBlock *> &elem_blocks, void *data) const
+  {
+    std::vector<int64_t> block_to_decomp = get_block_to_decomp_map(elem_blocks);
 
-  double  *rvar   = static_cast<double *>(data);
-  int     *ivar   = static_cast<int *>(data);
-  int64_t *i64var = static_cast<int64_t *>(data);
+    ElementBlockBatchReader batchReader(decomp.get());
 
-  for(size_t block=0; block<num_blocks; block++) {
-    Ioss::ElementBlock *entity = elem_blocks[block];
-    int iblk = entity->get_property("iblk").get_int();
-    size_t comp_count = block_data[iblk].comp_count;
+    std::vector<int> block_field_component_count =
+        get_entity_field_component_count(field_name, elem_blocks);
+    std::vector<size_t> ioss_offset =
+        batchReader.get_offset(block_to_decomp, block_field_component_count);
 
-    if(entity->field_exists(field_name)) {
-      Ioss::Field field = entity->get_field(field_name);
-      size_t num_entity = entity->entity_count();
+    size_t num_blocks = elem_blocks.size();
 
-      for (size_t comp = 0; comp < comp_count; comp++) {
-        // Transfer to 'data' array.
-        size_t k = ioss_offset[iblk] + comp*num_entity;
-        size_t j = ioss_offset[iblk] + comp;
+    std::vector<BlockFieldData> block_data =
+        get_entity_block_field_data(variables, field_name, elem_blocks);
 
-        const size_t j_limit = ioss_offset[iblk+1];
+    std::vector<double> temp(ioss_offset[num_blocks]);
+    batchReader.get_field_data(get_file_pointer(), temp.data(), block_to_decomp,
+                               get_current_state(), block_data);
 
-        if (field.get_type() == Ioss::Field::INTEGER) {
-          for (; j < j_limit; j += comp_count) {
-            ivar[j] = static_cast<int>(temp[k++]);
+    double  *rvar   = static_cast<double *>(data);
+    int     *ivar   = static_cast<int *>(data);
+    int64_t *i64var = static_cast<int64_t *>(data);
+
+    for (size_t iblk = 0; iblk < num_blocks; iblk++) {
+      Ioss::ElementBlock *entity     = elem_blocks[iblk];
+      size_t              comp_count = block_data[iblk].comp_count;
+
+      if (entity->field_exists(field_name)) {
+        Ioss::Field field      = entity->get_field(field_name);
+        size_t      num_entity = entity->entity_count();
+
+        for (size_t comp = 0; comp < comp_count; comp++) {
+          // Transfer to 'data' array.
+          size_t k = ioss_offset[iblk] + comp * num_entity;
+          size_t j = ioss_offset[iblk] + comp;
+
+          const size_t j_limit = ioss_offset[iblk + 1];
+
+          if (field.get_type() == Ioss::Field::INTEGER) {
+            for (; j < j_limit; j += comp_count) {
+              ivar[j] = static_cast<int>(temp[k++]);
+            }
+          }
+          else if (field.get_type() == Ioss::Field::INT64) { // FIX 64 UNSAFE
+            for (; j < j_limit; j += comp_count) {
+              i64var[j] = static_cast<int64_t>(temp[k++]);
+            }
+          }
+          else if (field.get_type() == Ioss::Field::REAL) {
+            for (; j < j_limit; j += comp_count) {
+              rvar[j] = temp[k++];
+            }
+          }
+          else {
+            std::ostringstream errmsg;
+            fmt::print(errmsg,
+                       "IOSS_ERROR: Field storage type must be either integer or double.\n"
+                       "       Field '{}' is invalid.\n",
+                       field.get_name());
+            IOSS_ERROR(errmsg);
           }
         }
-        else if (field.get_type() == Ioss::Field::INT64) { // FIX 64 UNSAFE
-          for (; j < j_limit; j += comp_count) {
-            i64var[j] = static_cast<int64_t>(temp[k++]);
-          }
-        }
-        else if (field.get_type() == Ioss::Field::REAL) {
-          for (; j < j_limit; j += comp_count) {
-            rvar[j] = temp[k++];
-          }
-        }
-        else {
-          std::ostringstream errmsg;
-          fmt::print(errmsg,
-              "IOSS_ERROR: Field storage type must be either integer or double.\n"
-              "       Field '{}' is invalid.\n",
-              field.get_name());
-          IOSS_ERROR(errmsg);
-        }
-      }
 
-      if (ioss_offset[iblk+1] >= ioss_offset[iblk]) {
-        size_t field_byte_size = field.get_basic_size();
-        size_t block_data_offset = ioss_offset[iblk]*field_byte_size;
+        if (ioss_offset[iblk + 1] >= ioss_offset[iblk]) {
+          size_t field_byte_size   = field.get_basic_size();
+          size_t block_data_offset = ioss_offset[iblk] * field_byte_size;
 
-        field.transform((char*)data + block_data_offset);
+          field.transform((char *)data + block_data_offset);
+        }
       }
     }
+
+    return ioss_offset;
   }
 
-  return ioss_offset;
-}
+  std::vector<size_t>
+  ParallelDatabaseIO::get_entity_field_data(const std::string                       &field_name,
+                                            const std::vector<Ioss::ElementBlock *> &elem_blocks,
+                                            void *data, size_t data_size) const
+  {
+    if (field_name == "connectivity" || field_name == "connectivity_raw") {
+      return get_entity_connectivity_field_data(field_name, elem_blocks, data, data_size);
+    }
 
-std::vector<size_t> ParallelDatabaseIO::get_all_block_field_data(const std::string &field_name, void *data, size_t data_size) const
-{
-  if(field_name == "connectivity" || field_name == "connectivity_raw") {
-    return get_all_block_connectivity(field_name, data, data_size);
+    size_t expected_data_size = get_entity_field_data_size(field_name, elem_blocks);
+
+    if (data_size < expected_data_size) {
+      std::ostringstream errmsg;
+      fmt::print(errmsg,
+                 "ERROR: Field {} with data size {} on region {} is less than expected size {}\n\n",
+                 field_name, data_size, get_region()->name(), expected_data_size);
+      IOSS_ERROR(errmsg);
+    }
+
+    return get_entity_transient_field_data(m_variables[EX_ELEM_BLOCK], field_name, elem_blocks,
+                                           data);
   }
 
-  const Ioss::ElementBlockContainer& elem_blocks = get_region()->get_element_blocks();
-  size_t expected_data_size = get_all_block_field_data_size(field_name, elem_blocks);
-
-  if (data_size < expected_data_size) {
-    std::ostringstream errmsg;
-    fmt::print(errmsg, "ERROR: Connectivity data size {} on region {} is less than expected size {}\n\n", data_size,
-               get_region()->name(), expected_data_size);
-    IOSS_ERROR(errmsg);
-  }
-
-  return get_all_block_transient_field_data(m_variables[EX_ELEM_BLOCK], field_name, data);
-}
 } // namespace Ioex
 #else
 IOSS_MAYBE_UNUSED const char ioss_exodus_parallel_database_unused_symbol_dummy = '\0';

@@ -4,16 +4,15 @@
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_CodeTypes.h>
-#include <heartbeat/Iohb_DatabaseIO.h>
-
+#include "Ioss_CodeTypes.h"
+#include "heartbeat/Iohb_DatabaseIO.h"
+#include "heartbeat/Iohb_Layout.h"
 #include <cassert>
 #include <cstddef>
 #include <ctime>
 #include <fmt/ostream.h>
 #include <fstream>
 #include <string>
-
 #include <vector>
 
 #include "Ioss_DBUsage.h"
@@ -23,31 +22,15 @@
 #include "Ioss_IOFactory.h"
 #include "Ioss_ParallelUtils.h"
 #include "Ioss_Property.h"
-#include "Ioss_Region.h"
+#include "Ioss_PropertyManager.h"
 #include "Ioss_State.h"
 #include "Ioss_Utils.h"
-#include "Ioss_VariableType.h"
-#include <heartbeat/Iohb_Layout.h>
-
-namespace Ioss {
-  class CommSet;
-  class EdgeBlock;
-  class EdgeSet;
-  class ElementBlock;
-  class ElementSet;
-  class FaceBlock;
-  class FaceSet;
-  class NodeBlock;
-  class NodeSet;
-  class SideBlock;
-  class SideSet;
-} // namespace Ioss
 
 namespace {
   std::string time_stamp(const std::string &format)
   {
     if (format.empty()) {
-      return std::string("");
+      return {""};
     }
     const int   length = 256;
     static char time_string[length];
@@ -58,9 +41,9 @@ namespace {
     size_t error = strftime(time_string, length, format.c_str(), local_time);
     if (error != 0) {
       time_string[length - 1] = '\0';
-      return std::string(time_string);
+      return {time_string};
     }
-    return std::string("[ERROR]");
+    return {"[ERROR]"};
   }
 
   std::ostream *open_stream(const std::string &filename, bool *needs_delete, bool append_file)
@@ -257,6 +240,14 @@ namespace Iohb {
 
       Ioss::Utils::check_set_bool_property(properties, "SHOW_TIME_FIELD", new_this->addTimeField);
 
+      if (properties.exists("FULL_PRECISION")) {
+        bool precision = true;
+        Ioss::Utils::check_set_bool_property(properties, "FULL_PRECISION", precision);
+        if (precision) {
+          new_this->precision_ = -1;
+        }
+      }
+
       // SpyHis format is specific format, so don't override these settings:
       if (fileFormat == Iohb::Format::SPYHIS) {
         new_this->addTimeField = true;
@@ -287,11 +278,11 @@ namespace Iohb {
     }
   }
 
-  bool DatabaseIO::begin__(Ioss::State /* state */) { return true; }
+  bool DatabaseIO::begin_nl(Ioss::State /* state */) { return true; }
 
-  bool DatabaseIO::end__(Ioss::State /* state */) { return true; }
+  bool DatabaseIO::end_nl(Ioss::State /* state */) { return true; }
 
-  bool DatabaseIO::begin_state__(int /* state */, double time)
+  bool DatabaseIO::begin_state_nl(int /* state */, double time)
   {
     // If this is the first time, open the output stream and see if user wants a legend
     initialize();
@@ -310,14 +301,14 @@ namespace Iohb {
     return true;
   }
 
-  void DatabaseIO::flush_database__() const
+  void DatabaseIO::flush_database_nl() const
   {
     if (myProcessor == 0) {
       logStream->flush();
     }
   }
 
-  bool DatabaseIO::end_state__(int /* state */, double /* time */)
+  bool DatabaseIO::end_state_nl(int /* state */, double /* time */)
   {
     if (legend_ != nullptr) {
       if (fileFormat == Iohb::Format::SPYHIS) {

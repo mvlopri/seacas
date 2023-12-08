@@ -6,15 +6,15 @@
 
 #pragma once
 
-#include "ioss_export.h"
-
-#include <Ioss_CodeTypes.h>
-#include <Ioss_Utils.h>
+#include "Ioss_CodeTypes.h"
+#include "Ioss_Utils.h"
 #include <cstring>    // for strncmp
 #include <functional> // for less
 #include <map>        // for map, map<>::value_compare
 #include <string>     // for string, operator<
 #include <vector>     // for vector
+
+#include "ioss_export.h"
 
 namespace Ioss {
   class VariableType;
@@ -43,7 +43,7 @@ namespace Ioss {
   struct IOSS_EXPORT Suffix
   {
     explicit Suffix(const char *new_data) : m_data(new_data) {}
-    explicit Suffix(const std::string &new_data) : m_data(new_data) {}
+    explicit Suffix(std::string new_data) : m_data(std::move(new_data)) {}
     bool operator==(const std::string &str) const { return Utils::str_equal(m_data, str); }
     bool operator!=(const std::string &str) const { return !Utils::str_equal(m_data, str); }
     bool is_uppercase() const { return isalpha(m_data[0]) && isupper(m_data[0]); }

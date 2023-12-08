@@ -6,21 +6,29 @@
 
 #pragma once
 
-#include "ioss_export.h"
-
-#include <Ioss_BoundingBox.h>
-#include <Ioss_CodeTypes.h>
-#include <Ioss_EntityBlock.h>
-#include <Ioss_NodeBlock.h>
-#include <Ioss_Property.h>
-#include <Ioss_ZoneConnectivity.h>
+#include "Ioss_BoundingBox.h"
+#include "Ioss_CodeTypes.h"
+#include "Ioss_EntityBlock.h"
+#include "Ioss_NodeBlock.h"
+#include "Ioss_Property.h"
+#include "Ioss_ZoneConnectivity.h"
 #include <array>
 #include <cassert>
+#include <fmt/core.h>
 #include <fmt/ostream.h>
+#include <iosfwd>
+#include <stddef.h>
+#include <stdint.h>
 #include <string>
+#include <vector>
+
+#include "Ioss_EntityType.h"
+#include "SEACASIoss_config.h"
+#include "ioss_export.h"
 
 #if defined(SEACAS_HAVE_CGNS) && !defined(BUILT_IN_SIERRA)
 #include <cgnstypes.h>
+
 using IOSS_SB_INT = cgsize_t;
 #else
 // If this is not being built with CGNS, then default to using 32-bit integers.
@@ -31,6 +39,7 @@ using IOSS_SB_INT = int;
 
 namespace Ioss {
   class Region;
+  class Field;
 
   struct IOSS_EXPORT BoundaryCondition
   {
@@ -126,7 +135,7 @@ namespace Ioss {
      */
     bool is_active() const { return m_ijk[0] * m_ijk[1] * m_ijk[2] > 0; }
 
-    // Handle implicit properties -- These are calcuated from data stored
+    // Handle implicit properties -- These are calculated from data stored
     // in the grouping entity instead of having an explicit value assigned.
     // An example would be 'element_block_count' for a region.
     Property get_implicit_property(const std::string &my_name) const override;

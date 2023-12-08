@@ -44,7 +44,7 @@ int ex_put_map_param(int exoid, int num_node_maps, int num_elem_maps)
   int  int_type = NC_INT;
 
   EX_FUNC_ENTER();
-  if (ex__check_valid_file_id(exoid, __func__) == EX_FATAL) {
+  if (exi_check_valid_file_id(exoid, __func__) == EX_FATAL) {
     EX_FUNC_LEAVE(EX_FATAL);
   }
 
@@ -116,8 +116,10 @@ int ex_put_map_param(int exoid, int num_node_maps, int num_elem_maps)
         ex_err_fn(exoid, __func__, errmsg, status);
         goto error_ret; /* exit define mode and return */
       }
+#if defined(EX_CAN_USE_NC_DEF_VAR_FILL)
       int fill = NC_FILL_CHAR;
       nc_def_var_fill(exoid, varid, 0, &fill);
+#endif
 
       /* determine number of nodes */
       if ((status = nc_inq_dimid(exoid, DIM_NUM_NODES, &dimid)) != NC_NOERR) {
@@ -145,7 +147,7 @@ int ex_put_map_param(int exoid, int num_node_maps, int num_elem_maps)
           }
           goto error_ret; /* exit define mode and return */
         }
-        ex__compress_variable(exoid, varid, 1);
+        exi_compress_variable(exoid, varid, 1);
       }
     }
 
@@ -185,9 +187,10 @@ int ex_put_map_param(int exoid, int num_node_maps, int num_elem_maps)
         ex_err_fn(exoid, __func__, errmsg, status);
         goto error_ret; /* exit define mode and return */
       }
+#if defined(EX_CAN_USE_NC_DEF_VAR_FILL)
       int fill = NC_FILL_CHAR;
       nc_def_var_fill(exoid, varid, 0, &fill);
-
+#endif
       /* determine number of elements */
       if ((status = nc_inq_dimid(exoid, DIM_NUM_ELEM, &dimid)) != NC_NOERR) {
         snprintf(errmsg, MAX_ERR_LENGTH,
@@ -213,12 +216,12 @@ int ex_put_map_param(int exoid, int num_node_maps, int num_elem_maps)
           }
           goto error_ret; /* exit define mode and return */
         }
-        ex__compress_variable(exoid, varid, 1);
+        exi_compress_variable(exoid, varid, 1);
       }
     }
 
     /* leave define mode */
-    if ((status = ex__leavedef(exoid, __func__)) != NC_NOERR) {
+    if ((status = exi_leavedef(exoid, __func__)) != NC_NOERR) {
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to exit define mode");
       ex_err_fn(exoid, __func__, errmsg, status);
       EX_FUNC_LEAVE(EX_FATAL);
@@ -265,6 +268,6 @@ int ex_put_map_param(int exoid, int num_node_maps, int num_elem_maps)
 
 /* Fatal error: exit definition mode and return */
 error_ret:
-  ex__leavedef(exoid, __func__);
+  exi_leavedef(exoid, __func__);
   EX_FUNC_LEAVE(EX_FATAL);
 }

@@ -4,56 +4,82 @@
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_Assembly.h>
-#include <Ioss_Beam2.h>
-#include <Ioss_Beam3.h>
-#include <Ioss_CodeTypes.h>
-#include <Ioss_FaceGenerator.h>
-#include <Ioss_Hex20.h>
-#include <Ioss_Hex27.h>
-#include <Ioss_Hex8.h>
-#include <Ioss_IOFactory.h>
-#include <Ioss_Node.h>
-#include <Ioss_Pyramid13.h>
-#include <Ioss_Pyramid14.h>
-#include <Ioss_Pyramid5.h>
-#include <Ioss_Quad4.h>
-#include <Ioss_Quad8.h>
-#include <Ioss_Quad9.h>
-#include <Ioss_Sort.h>
-#include <Ioss_Spring2.h>
-#include <Ioss_Spring3.h>
-#include <Ioss_StructuredBlock.h>
-#include <Ioss_Tet10.h>
-#include <Ioss_Tet4.h>
-#include <Ioss_Tri3.h>
-#include <Ioss_Tri4.h>
-#include <Ioss_Tri6.h>
-#include <Ioss_Unknown.h>
-#include <Ioss_Utils.h>
-#include <Ioss_Wedge15.h>
-#include <Ioss_Wedge18.h>
-#include <Ioss_Wedge6.h>
-
+#include "Ioss_Assembly.h"
+#include "Ioss_Beam2.h"
+#include "Ioss_Beam3.h"
+#include "Ioss_CodeTypes.h"
+#include "Ioss_FaceGenerator.h"
+#include "Ioss_Hex20.h"
+#include "Ioss_Hex27.h"
+#include "Ioss_Hex8.h"
+#include "Ioss_IOFactory.h"
+#include "Ioss_Node.h"
+#include "Ioss_Pyramid13.h"
+#include "Ioss_Pyramid14.h"
+#include "Ioss_Pyramid5.h"
+#include "Ioss_Quad4.h"
+#include "Ioss_Quad8.h"
+#include "Ioss_Quad9.h"
+#include "Ioss_Sort.h"
+#include "Ioss_Spring2.h"
+#include "Ioss_Spring3.h"
+#include "Ioss_StructuredBlock.h"
+#include "Ioss_Tet10.h"
+#include "Ioss_Tet4.h"
+#include "Ioss_Tri3.h"
+#include "Ioss_Tri6.h"
+#include "Ioss_Unknown.h"
+#include "Ioss_Utils.h"
+#include "Ioss_Wedge15.h"
+#include "Ioss_Wedge18.h"
+#include "Ioss_Wedge6.h"
+#include <assert.h>
 #include <fmt/chrono.h>
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <stdint.h>
+#include <stdlib.h>
+#if !defined __NVCC__
 #include <fmt/color.h>
+#endif
+#include "cgns/Iocgns_StructuredZoneData.h"
+#include "cgns/Iocgns_Utils.h"
+#include <cgnstypes.h>
+#include <cmath>
+#include <cstring>
+#include <ctime>
 #include <fmt/ostream.h>
+#include <limits>
 #include <numeric>
+#include <ostream>
 #include <set>
+#include <string>
 #include <tokenize.h>
 
-#include <cgns/Iocgns_StructuredZoneData.h>
-#include <cgns/Iocgns_Utils.h>
-
-#include <cgnsconfig.h>
-#include <cgnstypes.h>
+#include "Ioss_DatabaseIO.h"
+#include "Ioss_ElementBlock.h"
+#include "Ioss_ElementTopology.h"
+#include "Ioss_EntityBlock.h"
+#include "Ioss_EntityType.h"
+#include "Ioss_GroupingEntity.h"
+#include "Ioss_MeshType.h"
+#include "Ioss_NodeBlock.h"
+#include "Ioss_ParallelUtils.h"
+#include "Ioss_Property.h"
+#include "Ioss_Region.h"
+#include "Ioss_SideBlock.h"
+#include "Ioss_SideSet.h"
+#include "Ioss_VariableType.h"
+#include "Ioss_ZoneConnectivity.h"
+#include "robin_hash.h"
+#include "robin_set.h"
 #if CG_BUILD_PARALLEL
 #include <pcgnslib.h>
 #else
 #include <cgnslib.h>
 #endif
 
-#include <cgns/Iocgns_Defines.h>
+#include "cgns/Iocgns_Defines.h"
 
 #define CGERR(funcall)                                                                             \
   do {                                                                                             \
@@ -63,7 +89,7 @@
   } while (0)
 
 namespace {
-#if defined(__IOSS_WINDOWS__)
+#if defined(__IOSS_WINDOWS__) || defined(__CYGWIN__)
   const char *strcasestr(const char *haystack, const char *needle)
   {
     std::string lneedle(Ioss::Utils::lowercase(needle));
@@ -1067,7 +1093,7 @@ size_t Iocgns::Utils::common_write_meta_data(int file_ptr, const Ioss::Region &r
   std::string code_version = region.get_optional_property("code_version", "unknown");
   std::string code_name    = region.get_optional_property("code_name", "unknown");
 
-  std::string mpi_version = "";
+  std::string mpi_version{};
 #if CG_BUILD_PARALLEL
   {
     char version[MPI_MAX_LIBRARY_VERSION_STRING];
@@ -2562,9 +2588,12 @@ void Iocgns::Utils::decompose_model(std::vector<Iocgns::StructuredZoneData *> &z
         px++;
         if (verbose && rank == 0) {
           fmt::print(Ioss::DebugOut(), "{}",
-                     fmt::format(fg(fmt::color::red),
-                                 "\nProcessor {} work: {}, workload ratio: {} (exceeds)", i,
-                                 fmt::group_digits(work_vector[i]), workload_ratio));
+                     fmt::format(
+#if !defined __NVCC__
+                         fg(fmt::color::red),
+#endif
+                         "\nProcessor {} work: {}, workload ratio: {} (exceeds)", i,
+                         fmt::group_digits(work_vector[i]), workload_ratio));
         }
       }
       else {
@@ -2578,7 +2607,7 @@ void Iocgns::Utils::decompose_model(std::vector<Iocgns::StructuredZoneData *> &z
       fmt::print(Ioss::DebugOut(), "\n\nWorkload threshold exceeded on {} processors.\n", px);
     }
     bool single_zone = zones.size() == 1;
-    if (single_zone) {
+    if (single_zone) { // GDS: Don't understand this code...  !single_zone?
       auto active = std::count_if(zones.begin(), zones.end(),
                                   [](Iocgns::StructuredZoneData *a) { return a->is_active(); });
       if (active >= proc_count) {
@@ -2714,19 +2743,21 @@ int Iocgns::Utils::pre_split(std::vector<Iocgns::StructuredZoneData *> &zones, d
   int  new_zone_id = static_cast<int>(zones.size()) + 1;
 
   // See if can split each zone over a set of procs...
-  std::vector<int> splits(zones.size());
+  std::vector<int> splits(zones.size(), 1);
 
-  for (size_t i = 0; i < zones.size(); i++) {
-    auto zone = zones[i];
-    if (zone->m_lineOrdinal != 7) {
-      double work = zone->work();
-      if (load_balance <= 1.2) {
-        splits[i] = int(std::ceil(work / avg_work));
+  if ((int)zones.size() < proc_count) {
+    for (size_t i = 0; i < zones.size(); i++) {
+      auto zone = zones[i];
+      if (zone->m_lineOrdinal != 7) {
+        double work = zone->work();
+        if (load_balance <= 1.2) {
+          splits[i] = int(std::ceil(work / avg_work));
+        }
+        else {
+          splits[i] = int(std::round(work / avg_work + 0.2));
+        }
+        splits[i] = splits[i] == 0 ? 1 : splits[i];
       }
-      else {
-        splits[i] = int(std::round(work / avg_work + 0.2));
-      }
-      splits[i] = splits[i] == 0 ? 1 : splits[i];
     }
   }
 
@@ -2734,32 +2765,34 @@ int Iocgns::Utils::pre_split(std::vector<Iocgns::StructuredZoneData *> &zones, d
   int  diff              = proc_count - num_splits;
   bool adjustment_needed = diff > 0;
 
-  while (diff != 0) {
-    // Adjust splits so sum is equal to proc_count.
-    // Adjust the largest split count(s)
-    int    step      = diff < 0 ? -1 : 1;
-    size_t min_z     = 0;
-    double min_delta = 1.0e27;
-    for (size_t i = 0; i < zones.size(); i++) {
-      auto   zone = zones[i];
-      double work = zone->work();
+  if (num_splits != (int)zones.size()) {
+    while (diff != 0) {
+      // Adjust splits so sum is equal to proc_count.
+      // Adjust the largest split count(s)
+      int    step      = diff < 0 ? -1 : 1;
+      size_t min_z     = 0;
+      double min_delta = 1.0e27;
+      for (size_t i = 0; i < zones.size(); i++) {
+        auto   zone = zones[i];
+        double work = zone->work();
 
-      if (splits[i] == 0) {
-        continue;
-      }
-      if ((splits[i] + step) > 0) {
-        double delta = std::abs(avg_work - work / (double)(splits[i] + step));
-        if (delta < min_delta) {
-          min_delta = delta;
-          min_z     = i;
+        if (splits[i] == 0) {
+          continue;
+        }
+        if ((splits[i] + step) > 0) {
+          double delta = std::abs(avg_work - work / (double)(splits[i] + step));
+          if (delta < min_delta) {
+            min_delta = delta;
+            min_z     = i;
+          }
         }
       }
+      splits[min_z] += step;
+      diff -= step;
     }
-    splits[min_z] += step;
-    diff -= step;
+    assert(diff == 0);
+    assert(std::accumulate(splits.begin(), splits.end(), 0) == proc_count);
   }
-  assert(diff == 0);
-  assert(std::accumulate(splits.begin(), splits.end(), 0) == proc_count);
 
   // See if splits result in avg_work for all zones in range...
   double min_avg      = avg_work / load_balance;

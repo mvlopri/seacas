@@ -6,16 +6,16 @@
  * See packages/seacas/LICENSE for details
  */
 
-#include "Ioss_CodeTypes.h"
+#include <cstdlib> // for exit, EXIT_SUCCESS, getenv
+#include <fmt/core.h>
+#include <iostream> // for operator<<, basic_ostream, etc
+#include <stdio.h>
+#include <string> // for char_traits, string
+
 #include "Ioss_GetLongOpt.h"
 #include "Ioss_Utils.h"
-#include "fmt/ostream.h"
+#include "SEACASIoss_config.h"
 #include "modify_interface.h"
-
-#include <cstddef>  // for nullptr
-#include <cstdlib>  // for exit, EXIT_SUCCESS, getenv
-#include <iostream> // for operator<<, basic_ostream, etc
-#include <string>   // for char_traits, string
 
 Modify::Interface::Interface() { enroll_options(); }
 
@@ -80,7 +80,9 @@ bool Modify::Interface::parse_options(int argc, char **argv)
   if (options_.retrieve("help") != nullptr) {
     options_.usage(std::cerr);
     fmt::print(stderr, "\n\tCan also set options via IO_MODIFY_OPTIONS environment variable.\n\n");
-    fmt::print(stderr, "\tDocumentation: https://sandialabs.github.io/seacas-docs/sphinx/html/index.html#io-modify\n\n");
+    fmt::print(stderr,
+               "\tDocumentation: "
+               "https://sandialabs.github.io/seacas-docs/sphinx/html/index.html#io-modify\n\n");
     fmt::print(stderr, "\t->->-> Send email to gdsjaar@sandia.gov for {} support.<-<-<-\n",
                options_.program_name());
     exit(EXIT_SUCCESS);

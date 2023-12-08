@@ -8,12 +8,12 @@
 
 #include "ioss_export.h"
 
+#include "Ioss_EntityBlock.h"
 #include "Ioss_EntityType.h" // for EntityType, etc
-#include <Ioss_EntityBlock.h>
-#include <Ioss_Property.h> // for Property
-#include <cstddef>         // for size_t
-#include <cstdint>         // for int64_t
-#include <string>          // for string
+#include "Ioss_Property.h"   // for Property
+#include <cstddef>           // for size_t
+#include <cstdint>           // for int64_t
+#include <string>            // for string
 namespace Ioss {
   class DatabaseIO;
 } // namespace Ioss
@@ -39,7 +39,7 @@ namespace Ioss {
     std::string contains_string() const override { return "Face"; }
     EntityType  type() const override { return FACEBLOCK; }
 
-    // Handle implicit properties -- These are calcuated from data stored
+    // Handle implicit properties -- These are calculated from data stored
     // in the grouping entity instead of having an explicit value assigned.
     // An example would be 'face_block_count' for a region.
     Property get_implicit_property(const std::string &my_name) const override;

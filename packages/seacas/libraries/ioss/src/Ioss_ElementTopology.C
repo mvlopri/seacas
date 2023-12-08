@@ -4,11 +4,11 @@
 //
 // See packages/seacas/LICENSE for details
 
-#include <Ioss_CodeTypes.h>          // for IntVector
-#include <Ioss_ElementPermutation.h> // for ElementPermutation
-#include <Ioss_ElementTopology.h>
-#include <Ioss_Super.h> // for Super
-#include <Ioss_Utils.h>
+#include "Ioss_CodeTypes.h"          // for IntVector
+#include "Ioss_ElementPermutation.h" // for ElementPermutation
+#include "Ioss_ElementTopology.h"
+#include "Ioss_Super.h" // for Super
+#include "Ioss_Utils.h"
 
 #include <cassert> // for assert
 #include <cstddef> // for size_t
@@ -298,7 +298,7 @@ Ioss::IntVector Ioss::ElementTopology::boundary_connectivity(int bnd_number) con
       return Ioss::IntVector{bnd_number - 1};
     }
   }
-  return Ioss::IntVector();
+  return {};
 }
 
 Ioss::ElementTopology *Ioss::ElementTopology::boundary_type(int bnd_number) const
@@ -347,7 +347,7 @@ Ioss::ElementTopology *Ioss::ElementTopology::boundary_type(int bnd_number) cons
 
 bool Ioss::ElementTopology::equal_(const Ioss::ElementTopology &rhs, bool quiet) const
 {
-  if (this->name_ == rhs.name_) {
+  if (this->name_ != rhs.name_) {
     if (!quiet) {
       fmt::print(Ioss::OUTPUT(), "Element Topology: NAME mismatch ({} vs. {})\n",
                  this->name_.c_str(), rhs.name_.c_str());
@@ -355,7 +355,7 @@ bool Ioss::ElementTopology::equal_(const Ioss::ElementTopology &rhs, bool quiet)
     return false;
   }
 
-  if (this->masterElementName_ == rhs.masterElementName_) {
+  if (this->masterElementName_ != rhs.masterElementName_) {
     if (!quiet) {
       fmt::print(Ioss::OUTPUT(), "Element Topology: MASTER ELEMENT NAME mismatch ({} vs. {})\n",
                  this->masterElementName_.c_str(), rhs.masterElementName_.c_str());

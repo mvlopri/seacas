@@ -7,8 +7,8 @@
 #include <array>
 #include <string>
 
-static std::array<std::string, 3> qainfo{
+static const std::array<std::string, 3> qainfo{
     "conjoin",
-    "1.4.9",
-    "2021/03/05",
+    "1.4.10",
+    "2023/08/18",
 };

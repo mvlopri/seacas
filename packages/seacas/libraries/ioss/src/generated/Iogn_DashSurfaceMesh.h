@@ -6,18 +6,18 @@
 
 #pragma once
 
-#include "iogn_export.h"
-
-#include <Ioss_Beam2.h>
-#include <Ioss_Hex8.h>
-#include <Ioss_Shell4.h>
+#include "Ioss_Beam2.h"
+#include "Ioss_Hex8.h"
+#include "Ioss_Shell4.h"
+#include "generated/Iogn_GeneratedMesh.h" // for GeneratedMesh
 #include <cstddef>                        // for size_t
 #include <cstdint>                        // for int64_t
 #include <exception>                      // for exception
-#include <generated/Iogn_GeneratedMesh.h> // for GeneratedMesh
 #include <string>                         // for string
 #include <utility>                        // for pair
 #include <vector>                         // for vector
+
+#include "iogn_export.h"
 
 namespace Iogn {
 
@@ -35,9 +35,9 @@ namespace Iogn {
   inline std::string getTopologyName(Topology topology)
   {
     switch (topology) {
-    case Shell4: return std::string(Ioss::Shell4::name);
-    case Hex8: return std::string(Ioss::Hex8::name);
-    case Beam2: return std::string(Ioss::Beam2::name);
+    case Shell4: return {Ioss::Shell4::name};
+    case Hex8: return {Ioss::Hex8::name};
+    case Beam2: return {Ioss::Beam2::name};
     }
     throw std::exception();
   }
@@ -65,7 +65,7 @@ namespace Iogn {
     std::vector<std::vector<int>>         sidesetConnectivity;
     std::vector<std::vector<std::string>> sidesetTouchingBlocks;
 
-    ExodusData() = default;
+    ExodusData() = delete;
     ExodusData(std::vector<double> coords, std::vector<std::vector<int>> elemBlockConnectivity,
                std::vector<int> globalNumOfElemsInBlock, std::vector<int> localNumOfElemsInBlock,
                std::vector<Topology> blockTopoData, int globalNumNodes,

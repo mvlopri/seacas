@@ -20,13 +20,13 @@
 #include "Ioss_Region.h"
 #include "Ioss_SideBlock.h"
 #include "Ioss_SideSet.h"
+#include "Ioss_SubSystem.h"
 #include "Ioss_VariableType.h"
-#include <Ioss_SubSystem.h>
 
 #include "Ioss_DatabaseIO.h" // for DatabaseIO
 
 #include "Ioss_IOFactory.h" // for IOFactory
-#include <init/Ionit_Initializer.h>
+#include "init/Ionit_Initializer.h"
 
 #include "adios/Ioad_Constants.h"
 #include "adios/Ioad_Helper.h"
@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 #ifdef SEACAS_HAVE_MPI
   MPI_Init(&argc, &argv);
 #endif
-  const int result = doctest::Context().run(argc, argv);
+  const int result = doctest::Context().run();
 #ifdef SEACAS_HAVE_MPI
   MPI_Finalize();
 #endif
@@ -423,9 +423,9 @@ void create_database(std::string type, std::string file_name)
 DOCTEST_TEST_CASE("Ioad")
 {
 
-  Ioss::Init::Initializer::initialize_ioss();
-  std::string exodus_db_name = "phantom.e";
-  std::string adios_db_name  = "phantom.bp";
+  Ioss::Init::Initializer init_db;
+  std::string             exodus_db_name = "phantom.e";
+  std::string             adios_db_name  = "phantom.bp";
   create_database("exodus", exodus_db_name);
   create_database("adios", adios_db_name);
   // Database pointers are deleted by their respective region destructors.

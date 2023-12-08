@@ -7,8 +7,8 @@
 #include <array>
 #include <string>
 
-static std::array<std::string, 3> qainfo{
+static const std::array<std::string, 3> qainfo{
     "slice",
-    "2022/09/12",
-    "2.0.00",
+    "2023/09/14",
+    "2.1.05",
 };
