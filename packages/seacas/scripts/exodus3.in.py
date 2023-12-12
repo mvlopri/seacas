@@ -121,7 +121,7 @@ def getExodusVersion():
     found.
     """
 
-    return _parse_exodus_version('#define EXODUS_VERSION       "8.22"')
+    return _parse_exodus_version('#define EXODUS_VERSION       "8.25"')
 
 
 def _parse_exodus_version(version_string):
@@ -842,7 +842,7 @@ class exodus:
             EXODUS_LIB.ex_put_init_ext(file_id, ctypes.byref(p))
         return True
 
-    def copy(self, fileName, include_transient=False, mode='a'):
+    def copy(self, fileNames, include_transient=False, mode='a'):
         """
         Copies exodus database to file_name and returns an opened copy as a
         new exodus object. This object will need to be closed when it is done
@@ -860,18 +860,20 @@ class exodus:
         -------
         exo_copy : exodus object opened in append mode by default
         """
-        i64Status = EXODUS_LIB.ex_int64_status(self.file_ids[0])
-        fileId = EXODUS_LIB.ex_create_int(fileName.encode('ascii'), EX_NOCLOBBER | i64Status,
-                                          ctypes.byref(self.comp_ws),
-                                          ctypes.byref(self.io_ws),
-                                          EX_API_VERSION_NODOT)
+        if len(fileNames) != len(self.file_ids):
+            raise RuntimeError(f"Different number of files expected based on number of names given. Number of file names given: {len(fileNames)}. Number of file ids: {len(self.file_ids)}")
+        for idx, file in enumerate(self.file_ids):
+            i64Status = EXODUS_LIB.ex_int64_status(file)
+            fileId = EXODUS_LIB.ex_create_int(fileNames[idx].encode('ascii'), EX_NOCLOBBER | i64Status,
+                                              ctypes.byref(self.comp_ws),
+                                              ctypes.byref(self.io_ws),
+                                              EX_API_VERSION_NODOT)
 
-        self.copy_file(fileId, include_transient)
-        EXODUS_LIB.ex_close(fileId)
+            self.copy_file(file, fileId, include_transient)
+            EXODUS_LIB.ex_close(fileId)
+        return exodus(fileNames, mode)
 
-        return exodus(fileName, mode)
-
-    def copy_file(self, file_id, include_transient=False):
+    def copy_file(self, orig_file_id, file_id, include_transient=False):
         """
         Copies exodus database to the database pointed to by `fileId`
         Returns the passed in `file_id`.
@@ -893,13 +895,10 @@ class exodus:
         file_id: The file_id of the copied to file
 
         """
-        if len(self.file_ids) == 1:
-            EXODUS_LIB.ex_copy(self.file_ids[0], file_id)
-            if include_transient:
-                EXODUS_LIB.ex_copy_transient(self.file_ids[0], file_id)
-            return file_id
-        else:
-            raise RuntimeError("ERROR: The copy_file method can only be used if there is one file in this database")
+        EXODUS_LIB.ex_copy(orig_file_id, file_id)
+        if include_transient:
+            EXODUS_LIB.ex_copy_transient(orig_file_id, file_id)
+        return file_id
 
     def title(self):
         """
@@ -5403,9 +5402,7 @@ class exodus:
         return ids
 
     def __ex_get_assembly(self, assem_struct):
-        for file_id in self.file_ids:
-            if EXODUS_LIB.ex_get_assembly(file_id, ctypes.byref(assem_struct)) ==  0:
-                break 
+        EXODUS_LIB.ex_get_assembly(self.file_ids[0], ctypes.byref(assem_struct))
         ptr = ctypes.create_string_buffer(MAX_NAME_LENGTH + 1)
         assem_struct.name = ctypes.cast(ptr, ctypes.c_char_p)
         eptr = (ctypes.c_longlong * assem_struct.entity_count)()
@@ -5780,19 +5777,25 @@ class exodus:
         obj_type = ctypes.c_int(get_entity_type(object_type))
         block_id = ctypes.c_longlong(object_id)
         blk_type = ctypes.create_string_buffer(MAX_STR_LENGTH + 1)
+        if EXODUS_LIB.ex_int64_status(self.file_ids[0]) & EX_BULK_INT64_API:
+            num_elem_this_blk = ctypes.c_longlong(0)
+            num_nodes_per_elem = ctypes.c_longlong(0)
+            num_edges_per_elem = ctypes.c_longlong(0)
+            num_faces_per_elem = ctypes.c_longlong(0)
+            num_attr = ctypes.c_longlong(0)
+        else:
+            num_elem_this_blk = ctypes.c_int(0)
+            num_nodes_per_elem = ctypes.c_int(0)
+            num_edges_per_elem = ctypes.c_int(0)
+            num_faces_per_elem = ctypes.c_int(0)
+            num_attr = ctypes.c_int(0)
+        
+        num_block_elements = 0
+        num_nodes_per_element = 0
+        num_edges_per_element = 0
+        num_faces_per_element = 0
+        num_attributes = 0
         for file_id in self.file_ids:
-            if EXODUS_LIB.ex_int64_status(file_id) & EX_BULK_INT64_API:
-                num_elem_this_blk = ctypes.c_longlong(0)
-                num_nodes_per_elem = ctypes.c_longlong(0)
-                num_edges_per_elem = ctypes.c_longlong(0)
-                num_faces_per_elem = ctypes.c_longlong(0)
-                num_attr = ctypes.c_longlong(0)
-            else:
-                num_elem_this_blk = ctypes.c_int(0)
-                num_nodes_per_elem = ctypes.c_int(0)
-                num_edges_per_elem = ctypes.c_int(0)
-                num_faces_per_elem = ctypes.c_int(0)
-                num_attr = ctypes.c_int(0)
             EXODUS_LIB.ex_get_block(
                 file_id,
                 obj_type,
@@ -5803,8 +5806,13 @@ class exodus:
                 ctypes.byref(num_edges_per_elem),
                 ctypes.byref(num_faces_per_elem),
                 ctypes.byref(num_attr))
-        return blk_type.value, int(num_elem_this_blk.value), int(num_nodes_per_elem.value), int(num_attr.value)
-
+            num_block_elements += int(num_elem_this_blk.value)
+            num_nodes_per_element += int(num_nodes_per_elem.value)
+            num_edges_per_element += int(num_edges_per_elem.value)
+            num_faces_per_element += int(num_faces_per_elem.value)
+            num_attributes += int(num_attr.value)
+        return blk_type.value, num_block_elements, num_nodes_per_element, num_attributes
+    
     def __ex_put_block(
             self,
             object_type,
@@ -5927,8 +5935,7 @@ class exodus:
         var_type = ctypes.c_int(get_entity_type(varType))
         num_vars = ctypes.c_int()
         for file_id in self.file_ids:
-            EXODUS_LIB.ex_get_variable_param(
-                self.file_ids, var_type, ctypes.byref(num_vars))
+            EXODUS_LIB.ex_get_variable_param(file_id, var_type, ctypes.byref(num_vars))
         return num_vars
 
     def __ex_get_variable_names(self, varType):
@@ -6223,7 +6230,7 @@ class exodus:
         num_vars = ctypes.c_int(numVars)
         current_num = self.__ex_get_variable_param(varType)
         if current_num.value == num_vars.value:
-            # print "value already set"
+            print("value already set")
             return True
 
         var_type = ctypes.c_int(get_entity_type(varType))
@@ -6247,7 +6254,8 @@ class exodus:
         var_type = ctypes.c_int(get_entity_type(varType))
         var_id = ctypes.c_int(varId)
         name = ctypes.create_string_buffer(varName.encode('ascii'), MAX_NAME_LENGTH + 1)
-        EXODUS_LIB.ex_put_variable_name(self.file_ids, var_type, var_id, name)
+        for file in self.file_ids:
+            EXODUS_LIB.ex_put_variable_name(file, var_type, var_id, name)
         return True
 
     def __ex_get_attr_names(self, objType, blkId):
