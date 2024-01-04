@@ -162,11 +162,11 @@ class ex_options(Enum):
     EX_NULLVERBOSE = 8
 
 
-ACCESS = os.getenv('ACCESS', '/ceeGPFS/fgs/mvlopri/seacas')
+ACCESS = os.getenv('ACCESS', '@ACCESSDIR@')
 if os.uname()[0] == 'Darwin':
-    EXODUS_SO = f"{ACCESS}/lib/libexodus.dylib"
+    EXODUS_SO = f"{ACCESS}/@SEACAS_LIBDIR@/libexodus.dylib"
 else:
-    EXODUS_SO = f"{ACCESS}/lib/libexodus.so"
+    EXODUS_SO = f"{ACCESS}/@SEACAS_LIBDIR/libexodus.so"
 pip_path = os.path.dirname(__file__)
 pip_so_path = os.path.join(pip_path, "libexodus.so")
 try:
@@ -4765,7 +4765,7 @@ class exodus:
         # adjust one of them
         values[names.index(name)] = ctypes.c_double(value)
         # write them all
-        EXODUS_LIB.ex_put_var(self.file_ids,
+        EXODUS_LIB.ex_put_var(self.file_ids[0],
                               ctypes.c_int(step),
                               ctypes.c_int(get_entity_type('EX_GLOBAL')),
                               ctypes.c_int(1),
@@ -5110,32 +5110,45 @@ class exodus:
     def __ex_get_info(self):
         self.Title = ctypes.create_string_buffer(MAX_LINE_LENGTH + 1)
         if EXODUS_LIB.ex_int64_status(self.file_ids[0]) & EX_BULK_INT64_API:
-            self.numDim = ctypes.c_longlong(0)
-            self.numNodes = ctypes.c_longlong(0)
-            self.numElem = ctypes.c_longlong(0)
-            self.numElemBlk = ctypes.c_longlong(0)
-            self.numNodeSets = ctypes.c_longlong(0)
-            self.numSideSets = ctypes.c_longlong(0)
-            self.numAssembly = ctypes.c_longlong(0)
-            self.numBlob = ctypes.c_longlong(0)
+            int_init = ctypes.c_longlong
         else:
-            self.numDim = ctypes.c_int(0)
-            self.numNodes = ctypes.c_int(0)
-            self.numElem = ctypes.c_int(0)
-            self.numElemBlk = ctypes.c_int(0)
-            self.numNodeSets = ctypes.c_int(0)
-            self.numSideSets = ctypes.c_int(0)
-            self.numAssembly = ctypes.c_int(0)
-            self.numBlob = ctypes.c_int(0)
+            int_init = ctypes.c_int
+        self.numDim = int_init(0)
+        self.numGlobalNodes = int_init(0)
+        self.numGlobalElem = int_init(0)
+        self.numGlobalElemBlk = int_init(0)
+        self.numGlobalNodeSets = int_init(0)
+        self.numGlobalSideSets = int_init(0)
+        self.numLocalNodes = int_init(0)
+        self.numLocalElem = int_init(0)
+        self.numLocalElemBlk = int_init(0)
+        self.numLocalNodeSets = int_init(0)
+        self.numLocalSideSets = int_init(0)
+        self.numAssembly = int_init(0)
+        self.numBlob = int_init(0)
+        #TO-DO: Work on converting to get_init_ext
         for file_id in self.file_ids:
             EXODUS_LIB.ex_get_init(
                 file_id, self.Title,
                 ctypes.byref(self.numDim),
-                ctypes.byref(self.numNodes),
-                ctypes.byref(self.numElem),
-                ctypes.byref(self.numElemBlk),
-                ctypes.byref(self.numNodeSets),
-                ctypes.byref(self.numSideSets))
+                ctypes.byref(self.numLocalNodes),
+                ctypes.byref(self.numLocalElem),
+                ctypes.byref(self.numLocalElemBlk),
+                ctypes.byref(self.numLocalNodeSets),
+                ctypes.byref(self.numLocalSideSets))
+        EXODUS_LIB.ex_get_init_global(
+            self.file_ids[0],
+            ctypes.byref(self.numGlobalNodes),
+            ctypes.byref(self.numGlobalElem),
+            ctypes.byref(self.numGlobalElemBlk),
+            ctypes.byref(self.numGlobalNodeSets),
+            ctypes.byref(self.numGlobalSideSets))
+        # Use global values if they exist but local values otherwise.
+        self.numNodes = self.numGlobalNodes or self.numLocalNodes
+        self.numElem = self.numGlobalElem or self.numLocalElem
+        self.numElemBlk = self.numGlobalElemBlk or self.numLocalElemBlk
+        self.numNodeSets = self.numGlobalNodeSets or self.numLocalNodeSets
+        self.numSideSets = self.numGlobalSideSets or self.numLocalSideSets
 
     # --------------------------------------------------------------------
 
@@ -5286,8 +5299,7 @@ class exodus:
     # --------------------------------------------------------------------
 
     def __ex_inquire_int(self, inq_id):
-        vals = [EXODUS_LIB.ex_inquire_int(file_id, inq_id) for file_id in self.file_ids]
-        val = sum(v for v in vals if v >= 0)
+        val = EXODUS_LIB.ex_inquire_int(self.file_ids[0], inq_id)
         if val < 0:
             raise Exception(f"ERROR: ex_inquire_int({str(inq_id)}) failed on {str(self.file_names)}")
         return val
@@ -5347,9 +5359,8 @@ class exodus:
         obj_type = ctypes.c_int(get_entity_type(objType))
         obj_id = ctypes.c_longlong(objId)
         obj_name = ctypes.create_string_buffer(MAX_NAME_LENGTH + 1)
-        for file_id in self.file_ids:
-            if not obj_name.value:
-                EXODUS_LIB.ex_get_name(file_id, obj_type, obj_id, ctypes.byref(obj_name))
+        if not obj_name.value:
+            EXODUS_LIB.ex_get_name(self.file_ids[0], obj_type, obj_id, ctypes.byref(obj_name))
         return obj_name.value.decode('utf8')
 
     # --------------------------------------------------------------------
@@ -5950,7 +5961,7 @@ class exodus:
 
         var_type = ctypes.c_int(get_entity_type(varType))
         EXODUS_LIB.ex_get_variable_names(
-            self.file_ids,
+            self.file_ids[0],
             var_type,
             num_vars,
             ctypes.byref(var_name_ptrs))
@@ -5964,7 +5975,7 @@ class exodus:
         num_values = ctypes.c_longlong(numValues)
         var_vals = (ctypes.c_double * num_values.value)()
         EXODUS_LIB.ex_get_var(
-            self.file_ids,
+            self.file_ids[0],
             step,
             var_type,
             var_id,
@@ -6254,8 +6265,7 @@ class exodus:
         var_type = ctypes.c_int(get_entity_type(varType))
         var_id = ctypes.c_int(varId)
         name = ctypes.create_string_buffer(varName.encode('ascii'), MAX_NAME_LENGTH + 1)
-        for file in self.file_ids:
-            EXODUS_LIB.ex_put_variable_name(file, var_type, var_id, name)
+        EXODUS_LIB.ex_put_variable_name(self.file_ids[0], var_type, var_id, name)
         return True
 
     def __ex_get_attr_names(self, objType, blkId):
