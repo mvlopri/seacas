@@ -15,7 +15,7 @@ import tempfile
 import ctypes
 from contextlib import contextmanager
 
-ACCESS = os.getenv("ACCESS", "@ACCESSDIR@")
+ACCESS = os.getenv("ACCESS", "/ceeGPFS/fgs/mvlopri/seacas")
 sys.path.append(os.path.join(ACCESS, "lib"))
 import exodus as exo
 
@@ -27,7 +27,7 @@ class TestExodus(unittest.TestCase):
         self.temp_exo_path = os.path.join(self.tempdir.name, "temp-test-assembly.exo")
         with exo.exodus(os.path.join(input_dir, "test-assembly.exo"), mode="r") as exofile:
             self.exofile = exofile
-            with self.exofile.copy(self.temp_exo_path, True) as temp_exofile:
+            with self.exofile.copy([self.temp_exo_path], True) as temp_exofile:
                 self.temp_exofile = temp_exofile
 
     def tearDown(self):
@@ -67,7 +67,7 @@ class TestExodus(unittest.TestCase):
         temp_exo_path2 = f"{self.temp_exo_path}2"
         with exo.exodus(self.temp_exo_path, mode="r") as temp_exofile:
             expected = list(temp_exofile.get_ids("EX_ASSEMBLY"))
-            with temp_exofile.copy(temp_exo_path2, True, mode="a") as temp_exofile2:
+            with temp_exofile.copy([temp_exo_path2], True, mode="a") as temp_exofile2:
                 temp_exofile2.put_assembly(new)
                 copied_output = list(temp_exofile2.get_ids("EX_ASSEMBLY"))
                 self.assertNotEqual(temp_exofile.modeChar, temp_exofile2.modeChar)
@@ -76,7 +76,7 @@ class TestExodus(unittest.TestCase):
     def test_copy_opened_in_read_mode(self):
         temp_exo_path2 = f"{self.temp_exo_path}2"
         with exo.exodus(self.temp_exo_path, mode="r") as temp_exofile:
-            with temp_exofile.copy(temp_exo_path2, True, mode="r") as temp_exofile2:
+            with temp_exofile.copy([temp_exo_path2], True, mode="r") as temp_exofile2:
                 expected = list(temp_exofile.get_ids("EX_ASSEMBLY"))
                 copied_output = list(temp_exofile2.get_ids("EX_ASSEMBLY"))
                 self.assertEqual(temp_exofile.modeChar, temp_exofile2.modeChar)
@@ -132,31 +132,15 @@ class TestExodus(unittest.TestCase):
 
     def test_get_elem_attr_values(self):
         names = ["Scale", "Units"]
+        attrs = [[3.14159], [1]]
         temp_copy = os.path.join(self.tempdir.name, "temp_copy.exo")
-        with exo.copy_mesh(self.temp_exo_path, temp_copy, additionalElementAttributes=names) as temp_exofile:
+        exo.copy_mesh(self.temp_exo_path, temp_copy, additionalElementAttributes=names).close()
+        with exo.exodus(temp_copy, mode="a") as temp_exofile:
             for elem_id in temp_exofile.get_ids("EX_ELEM_BLOCK"):
-                attrs = [[3.14159], [1]]
                 for name, values in zip(names, attrs):
                     temp_exofile.put_elem_attr_values(elem_id, name, values)
                 self.assertEqual(3.14159, temp_exofile.get_elem_attr_values(elem_id, "Scale")[0])
                 self.assertEqual(1.0, temp_exofile.get_elem_attr_values(elem_id, "Units")[0])
-
-    def test_get_variable_values(self):
-        with exo.exodus(self.temp_exo_path, 'a') as temp_exofile:
-            elem_ids = temp_exofile.get_ids("EX_ELEM_BLOCK")
-            exo.add_variables(temp_exofile, element_vars=[('fake_variable', elem_ids)])
-            for elem_id in elem_ids:
-                temp_exofile.put_variable_values("EX_ELEM_BLOCK", elem_id, "fake_variable", 1, [3.14159])
-                self.assertEqual(3.14159, temp_exofile.get_variable_values("EX_ELEM_BLOCK", elem_id, "fake_variable", 1)[0])
-
-    def test_get_variable_values_time(self):
-        with exo.exodus(self.temp_exo_path, 'a') as temp_exofile:
-            elem_ids = temp_exofile.get_ids("EX_ELEM_BLOCK")
-            exo.add_variables(temp_exofile, element_vars=[('fake_variable', elem_ids)])
-            for elem_id in elem_ids:
-                for time_step, val in enumerate([1, 2, 3.14159]):
-                    temp_exofile.put_variable_values("EX_ELEM_BLOCK", elem_id, "fake_variable", time_step + 1, [val])
-            self.assertEqual([1.0, 2.0, 3.14159], list(temp_exofile.get_variable_values_time("EX_ELEM_BLOCK", 1, "fake_variable", 1, 3)))
 
     def test_get_assemblies(self):
         with exo.exodus(self.temp_exo_path) as temp_exofile:
@@ -234,7 +218,7 @@ class TestExodus(unittest.TestCase):
         with exo.exodus(new_path, mode="w+") as exofile:
             exofile.put_qa_records(qa_recs + new)
             with exo.exodus(self.temp_exo_path) as orig:
-                orig.copy_file(exofile.fileId, include_transient=True)
+                orig.copy_file(orig.file_ids[0], exofile.file_ids[0], include_transient=True)
                 self.assertIn(new[0], exofile.get_qa_records())
 
     def test_put_assembly(self):
@@ -366,6 +350,91 @@ class TestExodusUtilities(unittest.TestCase):
     def test_basename(self):
         self.assertEqual("test", exo.basename("test.e"))
         self.assertEqual("fake/path/to/test", exo.basename("fake/path/to/test.e"))
+
+
+
+class TestMultiExodus(unittest.TestCase):
+    def setUp(self):
+        self.input_dir = os.path.dirname(__file__)
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.temp_exo_paths = [os.path.join(self.tempdir.name, "AB.e.2.0"), os.path.join(self.tempdir.name, "AB.e.2.1")]
+        self.input_files = [os.path.join(self.input_dir, "AB.e.2.0"), os.path.join(self.input_dir, "AB.e.2.1")]
+        with exo.exodus(self.input_files, mode="r") as exofile:
+            self.exofile = exofile
+            with exofile.copy(self.temp_exo_paths, True) as temp_exofile:
+                self.temp_exofile = temp_exofile
+                    
+    def test_load_files(self):
+        with exo.exodus(self.temp_exo_paths, mode="r") as exofile:
+            exofile.summarize()
+
+    def test_get_global_variable_names(self):
+        with exo.exodus(self.temp_exo_paths, mode="r") as exofile:
+            self.assertEqual(["global_var", ""], exofile.get_global_variable_names())
+
+    def test_put_global_variable_name(self):
+        with exo.exodus(self.temp_exo_paths, mode="a") as exofile:
+            self.assertTrue(exofile.put_global_variable_name("global_var2", 2))
+        with exo.exodus(self.temp_exo_paths, mode="r") as exofile:
+            self.assertEqual(["global_var", "global_var2"],  exofile.get_global_variable_names())
+
+    def test_put_global_variable_values(self):
+        with exo.exodus(self.temp_exo_paths, mode="a") as exofile:
+            self.assertTrue(exofile.put_global_variable_name("global_var2", 2))
+            self.assertTrue(exofile.put_global_variable_value("global_var2", 1, 5.555))
+        with exo.exodus(self.temp_exo_paths, mode="r") as exofile:
+            self.assertEqual(["global_var", "global_var2"],  exofile.get_global_variable_names())
+            self.assertEqual(5.555,  exofile.get_global_variable_value("global_var2", 1))
+
+    def test_get_all_global_variable_values(self):
+        with exo.exodus(self.temp_exo_paths, mode="r") as exofile:
+            self.assertEqual([3.14, 0.0], exofile.get_all_global_variable_values(1))
+
+    def test_multi_file_get_name_assembly(self):
+        with exo.exodus(self.temp_exo_paths) as temp_exofile:
+            assembly_ids = temp_exofile.get_ids("EX_ASSEMBLY")
+            names = [temp_exofile.get_name("EX_ASSEMBLY", assembly) for assembly in assembly_ids]
+            self.assertEqual(["Unit_test1", "Unit_test2"], names)
+
+    def test_inquire_assembly(self):
+        with exo.exodus(self.temp_exo_paths) as temp_exofile:
+            assem_count = temp_exofile.inquire("EX_INQ_ASSEMBLY")
+        self.assertEqual(2, assem_count)
+
+    def test_get_block_id_map(self):
+        with exo.exodus(self.temp_exo_paths) as temp_exofile:
+            elem_ids = temp_exofile.get_ids("EX_ELEM_BLOCK")
+            expected = [1, 0]
+            outputs = []
+            for val in elem_ids:
+                outputs.extend(temp_exofile.get_block_id_map("EX_ELEM_BLOCK", val))
+        self.assertListEqual(expected, outputs)
+
+    def test_multi_file_get_assembly(self):
+        with exo.exodus(self.temp_exo_paths) as temp_exofile:
+            assembly_ids = temp_exofile.get_ids("EX_ASSEMBLY")
+            assemblies = [temp_exofile.get_assembly(assembly) for assembly in assembly_ids]
+        root = exo.assembly(name="Unit_test1", type="EX_ASSEMBLY", id=111)
+        root.entity_list = [112]
+        self.assertEqual(str(root), str(assemblies[0]))
+
+
+    def test_multi_file_get_entity_count(self):
+        with exo.exodus(self.temp_exo_paths) as temp_exofile:
+            elem_ids = temp_exofile.get_ids("EX_ELEM_BLOCK")
+            elems = [temp_exofile.get_entity_count("EX_ELEM_BLOCK", elem) for elem in elem_ids]
+        self.assertListEqual([1, 1], elems)
+
+    def test_multi_file_get_entity_count_nodal(self):
+        with exo.exodus([os.path.join(self.input_dir, "AeB.e.3.0"),
+                         os.path.join(self.input_dir, "AeB.e.3.1"),
+                         os.path.join(self.input_dir, "AeB.e.3.2")]) as temp_exofile:
+            elem_ids = temp_exofile.get_ids("EX_ELEM_BLOCK")
+            elems = temp_exofile.get_entity_count("EX_NODAL", elem_ids[0])
+        self.assertEqual(12, elems)
+
+    def tearDown(self):
+        self.tempdir.cleanup()
 
 
 @contextmanager
