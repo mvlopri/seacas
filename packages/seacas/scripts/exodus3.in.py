@@ -623,17 +623,90 @@ class ex_attribute(ctypes.Structure):
                 ("values", ctypes.c_void_p)]
 
 
+def flatten_to_element(results):
+    flat_list = flatten_to_list(results)
+    if len(flat_list) == 1:
+        return flat_list[0]
+    return flat_list
+
+def flatten_to_list(results):
+    flat_list = []
+    for item in results:
+        if isinstance(item, list):
+            flat_list.extend(flatten(item))
+        elif isinstance(item, str):
+            if item:
+                flat_list.append(item)
+        else:
+            flat_list.extend(item)
+    return flat_list
+
 class multiexodus:
     """
     A class to handle multiple Exodus files.
     """
-
     def __init__(self, files, **kwargs):
         self.exodus_files = [exodus(file, **kwargs) for file in files]
+        self.reduction_strategies = {
+            'first': lambda results: results[0],
+            'sum': lambda results: sum(results),
+            "join_to_list": lambda results: flatten_to_list(results),
+            "join": lambda results: flatten_to_element(results),
+            "no_reduction": lambda results: results
+            # Add more reduction strategies here
+        }
+
+    def __getattr__(self, name):
+        def wrapper(*args, reduction_strategy='first', **kwargs):
+            results = [getattr(exo_obj, name)(*args, **kwargs) for exo_obj in self.exodus_files]
+            return self.reduction_strategies[reduction_strategy](results)
+        return wrapper
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        for f in self.exodus_files:
+            f.close()
+        if not traceback:
+            return True
+        
+    def copy(self, file_names, *args, **kwargs):
+        for file, exo_obj in zip(file_names, self.exodus_files):
+            exo_obj.copy(file, *args, **kwargs).close()
+        return multiexodus(file_names)
+
+    def _reduce(self, name, *args, reduction_strategy="first", **kwargs):
+        results = [getattr(exo_obj, name)(*args, **kwargs) for exo_obj in self.exodus_files]
+        return self.reduction_strategies[reduction_strategy](results)
+
+    def get_global_variable_names(self):
+        return self._reduce('get_global_variable_names', reduction_strategy="first")
     
-    def __getattr__(self, name: str):
-        results = [getattr(exo_obj, name) for exo_obj in self.exodus_files]
-        return sum(results)
+    def get_global_variable_value(self, *args, **kwargs):
+        return self._reduce('get_global_variable_value', *args, reduction_strategy="first", **kwargs)
+
+    def inquire(self, *args, **kwargs):
+        return self._reduce('inquire', *args, reduction_strategy='sum', **kwargs)
+
+    def put_assemblies(self, assemblies, *args, **kwargs):
+        for idx,assem in enumerate(assemblies):
+            self.exodus_files[idx%(len(self.exodus_files))].put_assembly(assem)
+
+    def get_ids(self, *args, **kwargs):
+        return self._reduce("get_ids", *args, reduction_strategy="join_to_list", **kwargs)
+    
+    def get_name(self, *args, **kwargs):
+        return self._reduce("get_name", *args, reduction_strategy="join", **kwargs)
+    
+    # def get_block_id_map(self, *args, **kwargs):
+    #     return self._reduce("get_block_id_map", *args, reduction_strategy="first", **kwargs)
+
+    def get_assembly(self, *args, **kwargs):
+        return self._reduce("get_assembly", *args, reduction_strategy="first", **kwargs)
+    
+    def get_entity_count(self, *args, **kwargs):
+        return self._reduce("get_entity_count", *args, reduction_strategy="no_reduction", **kwargs)
     
 class exodus:
     """
